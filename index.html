@@ -2,16 +2,16 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>اسکنر نام استخوان‌ها</title>
+    <title>تشخیص هوشمند سر (بر اساس ارتفاع)</title>
     <style>
-        body { margin: 0; background-color: #222; font-family: monospace; overflow: hidden; }
-        #sidebar {
-            position: absolute; top: 0; right: 0; width: 300px; height: 100vh;
-            background: #111; color: #0f0; overflow-y: auto; padding: 10px;
-            border-left: 2px solid #0f0; font-size: 12px;
+        body { margin: 0; background-color: #222; overflow: hidden; }
+        #status {
+            position: absolute; top: 20px; left: 20px;
+            background: rgba(0,0,0,0.8); color: white; padding: 15px;
+            font-family: sans-serif; border-radius: 8px; pointer-events: none;
         }
-        h3 { color: white; border-bottom: 1px solid white; margin-top: 0; }
-        .highlight { color: yellow; font-weight: bold; font-size: 14px; background: #333; }
+        .success { color: #0f0; font-weight: bold; }
+        .fail { color: #f00; font-weight: bold; }
     </style>
     <script type="importmap">
         {
@@ -23,70 +23,89 @@
     </script>
 </head>
 <body>
-    <div id="sidebar">
-        <h3>نتایج اسکن فایل Robotx.glb</h3>
-        <div id="results">در حال لود...</div>
-    </div>
+    <div id="status">در حال محاسبه ارتفاع استخوان‌ها...</div>
 
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        // 1. صحنه ساده
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x444444);
-        const camera = new THREE.PerspectiveCamera(50, (window.innerWidth-300)/window.innerHeight, 0.1, 100);
-        camera.position.set(0, 1.5, 3);
+        scene.background = new THREE.Color(0x222222);
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 100);
+        camera.position.set(0, 1.5, 4);
         
         const renderer = new THREE.WebGLRenderer({antialias: true});
-        renderer.setSize(window.innerWidth - 300, window.innerHeight); // فضا برای سایدبار
+        renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
-        
-        const controls = new OrbitControls(camera, renderer.domElement);
-        scene.add(new THREE.DirectionalLight(0xffffff, 2));
+
+        const light = new THREE.DirectionalLight(0xffffff, 2);
+        light.position.set(1, 2, 3);
+        scene.add(light);
         scene.add(new THREE.AmbientLight(0xffffff, 1));
 
-        const resultBox = document.getElementById('results');
-
-        // 2. لودر و اسکنر
         const loader = new GLTFLoader();
-        
+        let headBone = null;
+        let mouse = new THREE.Vector2();
+        const statusDiv = document.getElementById('status');
+
         loader.load('./Robotx.glb', function(gltf) {
-            scene.add(gltf.scene);
-            gltf.scene.position.y = -1;
+            const model = gltf.scene;
+            scene.add(model);
+            model.position.y = -1;
 
-            resultBox.innerHTML = ""; // پاک کردن پیام لودینگ
-            
-            let foundHead = false;
+            // --- الگوریتم پیدا کردن بلندترین استخوان ---
+            let highestY = -Infinity;
+            let bestBone = null;
 
-            // شروع اسکن تمام اجزا
-            gltf.scene.traverse((o) => {
-                // ما هم استخوان‌ها رو لیست میکنیم هم مش‌ها رو
+            scene.updateMatrixWorld(true); // آپدیت مختصات جهانی
+
+            model.traverse((o) => {
                 if (o.isBone) {
-                    let name = o.name;
-                    let displayName = `🦴 Bone: ${name}`;
-                    
-                    // اگر اسمش شبیه سر بود، هایلایت کن
-                    if (name.toLowerCase().includes('head') || name.toLowerCase().includes('neck')) {
-                        displayName = `<span class="highlight">>>> ${displayName} <<<</span>`;
-                        foundHead = true;
-                    }
+                    // گرفتن موقعیت جهانی استخوان
+                    const position = new THREE.Vector3();
+                    o.getWorldPosition(position);
 
-                    resultBox.innerHTML += displayName + "<br><hr style='border-color:#333'>";
+                    // اگر این استخوان از قبلی بالاتر بود، انتخابش کن
+                    // (به شرطی که توی اسمش End نباشه چون اون نوکِ استخوانه و نمی‌چرخه)
+                    if (position.y > highestY && !o.name.includes('End')) {
+                        highestY = position.y;
+                        bestBone = o;
+                    }
                 }
             });
 
-            if (!foundHead) {
-                resultBox.innerHTML += "<br><span style='color:red; font-size:16px'>هشدار: هیچ استخوانی با نام Head پیدا نشد!</span>";
+            if (bestBone) {
+                headBone = bestBone;
+                statusDiv.innerHTML = `سر پیدا شد! <br> نام سیستم: <span class="success">${headBone.name}</span><br>موس را تکان دهید.`;
+                console.log("Highest Bone Found:", headBone.name);
+            } else {
+                statusDiv.innerHTML = "<span class='fail'>هیچ استخوانی پیدا نشد! (آیا اکسپورت مکس درسته؟)</span>";
             }
 
         }, undefined, function(e) {
-            resultBox.innerHTML = "خطا در لود فایل! اسم فایل درست است؟";
+            statusDiv.innerHTML = "خطا در لود فایل";
         });
 
-        function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
+        document.addEventListener('mousemove', (e) => {
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (headBone) {
+                headBone.rotation.y = mouse.x * 0.8; 
+                headBone.rotation.x = mouse.y * 0.5;
+            }
+            renderer.render(scene, camera);
+        }
         animate();
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
     </script>
 </body>
 </html>
