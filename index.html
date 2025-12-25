@@ -2,21 +2,13 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>تعمیرکار خودکار ربات</title>
+    <title>تست چرخش کل ربات</title>
     <style>
-        body { margin: 0; background-color: #111; overflow: hidden; font-family: sans-serif; }
-        #overlay {
-            position: absolute; top: 10px; left: 10px;
-            background: rgba(0, 0, 0, 0.8); color: white;
-            padding: 15px; border-radius: 8px; pointer-events: none;
-            max-width: 300px;
-        }
-        .success { color: #0f0; }
-        .error { color: #f00; font-weight: bold; }
-        .btn {
-            pointer-events: auto; background: #007bff; color: white; border: none;
-            padding: 5px 10px; margin-top: 5px; cursor: pointer; border-radius: 4px;
+        body { margin: 0; background-color: #333; overflow: hidden; }
+        #status {
+            position: absolute; top: 20px; left: 20px;
+            background: black; color: yellow; padding: 10px;
+            font-family: sans-serif; font-size: 16px; border: 1px solid white;
         }
     </style>
     <script type="importmap">
@@ -29,123 +21,69 @@
     </script>
 </head>
 <body>
-    <div id="overlay">
-        <div>وضعیت سیستم: <span id="status">در حال لود...</span></div>
-        <div id="log" style="font-size: 12px; color: #aaa; margin-top: 5px;"></div>
-    </div>
+    <div id="status">در حال لود کردن...</div>
 
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        // 1. لاگر روی صفحه (برای اینکه بفهمیم چه خبره)
-        const statusEl = document.getElementById('status');
-        const logEl = document.getElementById('log');
-        function log(msg, isError = false) {
-            logEl.innerHTML += `> ${msg}<br>`;
-            if (isError) statusEl.innerHTML = "<span class='error'>خطا (متن را بخوانید)</span>";
-        }
-
-        // 2. صحنه
+        // 1. صحنه و دوربین
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x222222);
+        scene.background = new THREE.Color(0x333333);
         
-        const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 1000);
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 100);
+        camera.position.set(0, 1.5, 4); // دوربین جلو
+        
         const renderer = new THREE.WebGLRenderer({antialias: true});
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
-        
-        const controls = new OrbitControls(camera, renderer.domElement);
-        
-        // نور
-        const ambient = new THREE.AmbientLight(0xffffff, 2);
-        scene.add(ambient);
-        const dirLight = new THREE.DirectionalLight(0xffffff, 3);
-        dirLight.position.set(5, 10, 5);
-        scene.add(dirLight);
 
-        // 3. لود مدل
+        // نورپردازی (خیلی قوی که سیاه نشه)
+        const light = new THREE.DirectionalLight(0xffffff, 3);
+        light.position.set(2, 2, 5);
+        scene.add(light);
+        scene.add(new THREE.AmbientLight(0xffffff, 1));
+
+        // 2. لود مدل
         const loader = new GLTFLoader();
-        let headBone = null;
+        let robotModel = null; // متغیر برای نگهداری کل ربات
 
-        // !!! نام فایل را چک کنید (حروف بزرگ و کوچک) !!!
-        const fileName = './Robotx.glb'; 
+        loader.load('./Robotx.glb', function(gltf) {
+            robotModel = gltf.scene; // کل صحنه ربات رو میریزیم تو متغیر
+            scene.add(robotModel);
+            
+            // پایین آوردن ربات (اگر تو هوا بود)
+            robotModel.position.y = -1;
 
-        loader.load(fileName, function(gltf) {
-            const model = gltf.scene;
-            scene.add(model);
-            statusEl.innerHTML = "<span class='success'>مدل لود شد!</span>";
-            
-            // --- الف: نمایش اسکلت ---
-            const skeletonHelper = new THREE.SkeletonHelper(model);
-            scene.add(skeletonHelper);
-
-            // --- ب: ریست کردن پوز (Force T-Pose) ---
-            // این بخش تمام چرخش‌های ذخیره شده (حالت دویدن) را صفر می‌کند
-            log("در حال صاف کردن استخوان‌ها...");
-            model.traverse((o) => {
-                if (o.isBone) {
-                    // چرخش را صفر کن (صاف بایست!)
-                    o.rotation.set(0, 0, 0); 
-                    
-                    // پیدا کردن سر
-                    if (o.name.toLowerCase().includes('head') && !o.name.toLowerCase().includes('end')) {
-                        headBone = o;
-                        log(`سر پیدا شد: ${o.name}`);
-                    }
-                }
-            });
-
-            // --- ج: زوم خودکار روی مدل ---
-            // این باعث میشه اگه مدل خیلی دور یا ریز باشه، دوربین پیداش کنه
-            const box = new THREE.Box3().setFromObject(model);
-            const center = box.getCenter(new THREE.Vector3());
-            const size = box.getSize(new THREE.Vector3());
-            
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const fov = camera.fov * (Math.PI / 180);
-            let cameraZ = Math.abs(maxDim / 2 * Math.tan(fov * 2));
-            cameraZ *= 2.5; // کمی فاصله بیشتر
-            
-            camera.position.set(center.x, center.y + size.y/2, center.z + cameraZ);
-            camera.lookAt(center);
-            controls.target.copy(center);
-            controls.update();
-            
-            log("دوربین تنظیم شد.");
+            document.getElementById('status').innerText = "لود شد! باید الان بچرخه.";
+            document.getElementById('status').style.color = "#0f0";
 
         }, undefined, function(err) {
+            document.getElementById('status').innerText = "خطا! فایل لود نشد.";
+            document.getElementById('status').style.color = "red";
             console.error(err);
-            log(`خطای لود: ${err.message || 'فایل پیدا نشد'}`, true);
-            log("نکته: اسم فایل Robotx.glb دقیق است؟", true);
         });
 
-        // 4. انیمیشن و موس
-        const mouse = new THREE.Vector2();
-        document.addEventListener('mousemove', (e) => {
-            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-        });
+        // 3. انیمیشن (چرخش مداوم)
+        function animate() {
+            requestAnimationFrame(animate);
 
+            // اگر ربات لود شده، هر فریم یه ذره بچرخونش
+            if (robotModel) {
+                robotModel.rotation.y += 0.01; // سرعت چرخش
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+        
+        // ریسایز پنجره
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
-
-        function animate() {
-            requestAnimationFrame(animate);
-            
-            if (headBone) {
-                // چرخش سر با موس
-                headBone.rotation.y = mouse.x * 1.5; 
-                headBone.rotation.x = mouse.y * 1.0;
-            }
-            
-            renderer.render(scene, camera);
-        }
-        animate();
     </script>
 </body>
 </html>
