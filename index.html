@@ -3,24 +3,130 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>تست ربات سه بعدی</title>
-    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
+    <title>ربات تعاملی - دنبال کردن موس</title>
     <style>
-        body { margin: 0; background-color: #222; height: 100vh; display: flex; justify-content: center; align-items: center; }
-        /* استایل نمایشگر تمام صفحه */
-        model-viewer { width: 100%; height: 100%; }
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; }
+        canvas { display: block; }
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: white; font-family: sans-serif; font-size: 20px;
+        }
     </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
 </head>
 <body>
-    <model-viewer 
-        src="./low_poly_humanoid_robot.glb" 
-        alt="My 3D Robot"
-        camera-controls 
-        auto-rotate
-        shadow-intensity="1"
-        environment-image="neutral"
-        ar
-    >
-    </model-viewer>
+    <div id="loading">در حال لود کردن ربات...</div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // 1. ساخت صحنه
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a1a); // رنگ پس‌زمینه (خاکستری تیره)
+
+        // 2. دوربین
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 1.5, 3); // دوربین روبروی ربات
+
+        // 3. رندر کننده
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true; // فعال کردن سایه
+        document.body.appendChild(renderer.domElement);
+
+        // 4. نورپردازی (خیلی مهم برای دیده شدن مدل)
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
+        hemiLight.position.set(0, 20, 0);
+        scene.add(hemiLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        dirLight.position.set(3, 10, 10);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        // 5. متغیرها برای موس و سر
+        let headBone = null;
+        let mouse = new THREE.Vector2();
+        let targetRotation = new THREE.Vector2();
+
+        // 6. لود کردن مدل
+        const loader = new GLTFLoader();
+        loader.load(
+            './low_poly_humanoid_robot.glb', // اسم فایل دقیق
+            function (gltf) {
+                const model = gltf.scene;
+                scene.add(model);
+
+                // پیدا کردن استخوان سر
+                model.traverse((o) => {
+                    if (o.isBone && o.name === 'Head') {
+                        headBone = o;
+                        console.log("استخوان سر پیدا شد!");
+                    }
+                    if (o.isMesh) {
+                        o.castShadow = true;
+                        o.receiveShadow = true;
+                    }
+                });
+
+                // اگر ربات خیلی کوچک یا بزرگ بود، اینجا اسکیل رو تنظیم کن
+                // model.scale.set(1, 1, 1); 
+                
+                // پایین آوردن ربات تا پاهاش روی زمین باشه
+                model.position.y = 0; 
+
+                document.getElementById('loading').style.display = 'none';
+            },
+            undefined,
+            function (error) {
+                console.error(error);
+                document.getElementById('loading').innerText = "خطا در لود مدل";
+            }
+        );
+
+        // 7. دریافت حرکت موس
+        document.addEventListener('mousemove', (event) => {
+            // تبدیل مختصات موس به بازه -1 تا +1
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        });
+
+        // مدیریت تغییر سایز پنجره
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // 8. انیمیشن لوپ (هر فریم اجرا میشه)
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (headBone) {
+                // محاسبه زاویه چرخش بر اساس موس
+                // اعداد 0.5 و 0.3 محدودیت چرخش هستند تا گردنش نشکنه!
+                const targetX = mouse.y * 0.5; 
+                const targetY = mouse.x * -0.8; 
+
+                // نرم کردن حرکت (Lerp)
+                // عدد 0.1 سرعت نرمی رو تعیین میکنه
+                headBone.rotation.x = THREE.MathUtils.lerp(headBone.rotation.x, targetX, 0.1);
+                headBone.rotation.y = THREE.MathUtils.lerp(headBone.rotation.y, targetY, 0.1);
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+    </script>
 </body>
 </html>
