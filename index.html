@@ -2,14 +2,16 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>تست چرخش کل ربات</title>
+    <title>کنترل نهایی سر ربات</title>
     <style>
-        body { margin: 0; background-color: #333; overflow: hidden; }
+        body { margin: 0; background-color: #222; overflow: hidden; }
         #status {
             position: absolute; top: 20px; left: 20px;
-            background: black; color: yellow; padding: 10px;
-            font-family: sans-serif; font-size: 16px; border: 1px solid white;
+            background: rgba(0,0,0,0.8); color: white; padding: 15px;
+            font-family: sans-serif; border-radius: 8px; pointer-events: none;
         }
+        .ok { color: #0f0; font-weight: bold; }
+        .bad { color: #f00; font-weight: bold; }
     </style>
     <script type="importmap">
         {
@@ -21,56 +23,82 @@
     </script>
 </head>
 <body>
-    <div id="status">در حال لود کردن...</div>
+    <div id="status">در حال جستجوی استخوان سر...</div>
 
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-        // 1. صحنه و دوربین
+        // 1. صحنه
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x333333);
-        
+        scene.background = new THREE.Color(0x222222);
         const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 100);
-        camera.position.set(0, 1.5, 4); // دوربین جلو
+        camera.position.set(0, 1.6, 4); // تنظیم ارتفاع دوربین روبروی صورت
         
         const renderer = new THREE.WebGLRenderer({antialias: true});
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        // نورپردازی (خیلی قوی که سیاه نشه)
-        const light = new THREE.DirectionalLight(0xffffff, 3);
-        light.position.set(2, 2, 5);
+        // نورپردازی
+        const light = new THREE.DirectionalLight(0xffffff, 2);
+        light.position.set(1, 2, 3);
         scene.add(light);
         scene.add(new THREE.AmbientLight(0xffffff, 1));
 
-        // 2. لود مدل
+        // متغیرها
         const loader = new GLTFLoader();
-        let robotModel = null; // متغیر برای نگهداری کل ربات
+        let headBone = null;
+        let mouse = new THREE.Vector2();
+        const statusDiv = document.getElementById('status');
 
+        // 2. لود مدل
         loader.load('./Robotx.glb', function(gltf) {
-            robotModel = gltf.scene; // کل صحنه ربات رو میریزیم تو متغیر
-            scene.add(robotModel);
-            
-            // پایین آوردن ربات (اگر تو هوا بود)
-            robotModel.position.y = -1;
+            const model = gltf.scene;
+            scene.add(model);
+            model.position.y = -1; // پایین آوردن مدل
 
-            document.getElementById('status').innerText = "لود شد! باید الان بچرخه.";
-            document.getElementById('status').style.color = "#0f0";
+            // --- جستجوی استخوان سر ---
+            model.traverse((o) => {
+                if (o.isBone) {
+                    // بررسی نام دقیق (با توجه به لیستی که فرستادی)
+                    // ما هم mixamorig:Head رو چک میکنیم هم Head خالی رو
+                    if (o.name === 'mixamorig:Head' || o.name === 'Head' || o.name === 'mixamorigHead') {
+                        headBone = o;
+                        console.log("استخوان سر پیدا شد:", o.name);
+                    }
+                }
+            });
 
-        }, undefined, function(err) {
-            document.getElementById('status').innerText = "خطا! فایل لود نشد.";
-            document.getElementById('status').style.color = "red";
-            console.error(err);
+            if (headBone) {
+                statusDiv.innerHTML = "وضعیت: <span class='ok'>متصل شد! موس را تکان دهید.</span>";
+            } else {
+                statusDiv.innerHTML = "وضعیت: <span class='bad'>نام استخوان پیدا نشد!</span><br>کنسول را چک کنید.";
+            }
+
+        }, undefined, function(e) {
+            statusDiv.innerHTML = "خطا در لود فایل";
         });
 
-        // 3. انیمیشن (چرخش مداوم)
+        // 3. گرفتن مختصات موس
+        document.addEventListener('mousemove', (e) => {
+            // تبدیل مختصات به بازه -1 تا +1
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        });
+
+        // 4. انیمیشن
         function animate() {
             requestAnimationFrame(animate);
 
-            // اگر ربات لود شده، هر فریم یه ذره بچرخونش
-            if (robotModel) {
-                robotModel.rotation.y += 0.01; // سرعت چرخش
+            if (headBone) {
+                // فرمول حرکت: زاویه استخوان = موقعیت موس * شدت
+                // عدد 0.8 یعنی چقدر گردنش نرم باشه
+                
+                // چرخش به چپ و راست (حول محور Y)
+                headBone.rotation.y = mouse.x * 1.0; 
+                
+                // چرخش به بالا و پایین (حول محور X)
+                headBone.rotation.x = mouse.y * 0.5;
             }
 
             renderer.render(scene, camera);
@@ -78,7 +106,7 @@
 
         animate();
         
-        // ریسایز پنجره
+        // ریسایز
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
