@@ -2,24 +2,17 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>لیست کامل اجزای فایل</title>
+    <title>استخراج استخوان‌های مخفی</title>
     <style>
-        body { margin: 0; background-color: #222; overflow: hidden; font-family: monospace; }
-        
-        /* استایل لیست سمت راست */
-        #list-container {
-            position: absolute; top: 0; right: 0; width: 400px; height: 100vh;
-            background: #111; border-left: 2px solid #555;
-            overflow-y: auto; padding: 10px; box-sizing: border-box;
-            font-size: 13px; z-index: 10;
+        body { margin: 0; background-color: #222; font-family: monospace; overflow: hidden; }
+        #sidebar {
+            position: absolute; top: 0; right: 0; width: 350px; height: 100vh;
+            background: #151515; color: #ccc; overflow-y: auto; padding: 15px;
+            border-left: 2px solid #00ffcc; font-size: 13px;
         }
-        
-        .item { margin-bottom: 5px; padding: 5px; border-bottom: 1px solid #333; }
-        .bone { color: #00ff00; font-weight: bold; } /* استخوان سبز */
-        .mesh { color: #ffffff; } /* مش سفید */
-        .other { color: #888; } /* بقیه چیزها خاکستری */
-        
-        h3 { color: white; margin-top: 0; border-bottom: 1px solid white; padding-bottom: 5px;}
+        .highlight { color: #00ffcc; font-weight: bold; background: #222; padding: 2px; }
+        .mesh { color: white; border-bottom: 1px solid #555; padding: 5px 0; }
+        h3 { color: white; margin-top: 0; border-bottom: 1px solid #00ffcc; }
     </style>
     <script type="importmap">
         {
@@ -31,9 +24,9 @@
     </script>
 </head>
 <body>
-    <div id="list-container">
-        <h3>لیست تمام اجزای فایل Robotx.glb</h3>
-        <div id="output">در حال خواندن فایل...</div>
+    <div id="sidebar">
+        <h3>نتایج کالبدشکافی Robotx</h3>
+        <div id="results">در حال اسکن...</div>
     </div>
 
     <script type="module">
@@ -41,72 +34,63 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        // 1. صحنه ساده برای نمایش مدل
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x333333);
-        const camera = new THREE.PerspectiveCamera(50, (window.innerWidth-400)/window.innerHeight, 0.1, 100);
-        camera.position.set(0, 1.5, 4);
+        scene.background = new THREE.Color(0x444444);
+        const camera = new THREE.PerspectiveCamera(50, (window.innerWidth-350)/window.innerHeight, 0.1, 100);
+        camera.position.set(0, 1.5, 3);
         
         const renderer = new THREE.WebGLRenderer({antialias: true});
-        renderer.setSize(window.innerWidth - 400, window.innerHeight); // جای خالی برای لیست
+        renderer.setSize(window.innerWidth - 350, window.innerHeight);
         document.body.appendChild(renderer.domElement);
         
         const controls = new OrbitControls(camera, renderer.domElement);
         scene.add(new THREE.AmbientLight(0xffffff, 2));
 
-        const outputDiv = document.getElementById('output');
-
-        // 2. لودر فایل
+        const resultBox = document.getElementById('results');
         const loader = new GLTFLoader();
         
         loader.load('./Robotx.glb', function(gltf) {
             scene.add(gltf.scene);
-            
-            // نمایش اسکلت (برای اطمینان چشمی)
-            const helper = new THREE.SkeletonHelper(gltf.scene);
-            scene.add(helper);
+            gltf.scene.position.y = -1;
+            resultBox.innerHTML = ""; 
 
-            // پاک کردن پیام لودینگ
-            outputDiv.innerHTML = "";
-            let count = 0;
+            let foundSkin = false;
 
-            // --- اسکن کل فایل ---
+            // گشتن دنبال SkinnedMesh (مشِ استخوان‌دار)
             gltf.scene.traverse((o) => {
-                count++;
-                
-                // تشخیص نوع آبجکت
-                let typeClass = "other";
-                let typeName = o.type;
-                let icon = "🔹";
-
-                if (o.isBone) {
-                    typeClass = "bone";
-                    typeName = "BONE (استخوان)";
-                    icon = "🦴";
-                } else if (o.isMesh || o.isSkinnedMesh) {
-                    typeClass = "mesh";
-                    typeName = "MESH";
-                    icon = "📦";
+                if (o.isSkinnedMesh) {
+                    foundSkin = true;
+                    resultBox.innerHTML += `<div class="mesh">📦 MESH: ${o.name}</div>`;
+                    
+                    // حالا میریم سراغ استخوان‌های مخفی داخل اسکلت
+                    if (o.skeleton && o.skeleton.bones) {
+                        resultBox.innerHTML += `<div style="color:yellow; margin-bottom:5px">تعداد استخوان: ${o.skeleton.bones.length}</div>`;
+                        
+                        o.skeleton.bones.forEach(bone => {
+                            let boneName = bone.name;
+                            let style = "color: #888; margin-left: 15px;";
+                            
+                            // اگر اسمش شبیه سر بود
+                            if (boneName.toLowerCase().includes('head') || boneName.toLowerCase().includes('neck')) {
+                                style = "color: #00ffcc; font-weight:bold; margin-left: 15px;";
+                                boneName = `>>> ${boneName} <<<`;
+                            }
+                            
+                            resultBox.innerHTML += `<div style="${style}">🦴 ${boneName}</div>`;
+                        });
+                    } else {
+                        resultBox.innerHTML += `<div style="color:red">این مش اسکلت (Skeleton) ندارد!</div>`;
+                    }
+                    resultBox.innerHTML += "<hr>";
                 }
-
-                // ساخت HTML برای هر آیتم
-                const html = `
-                    <div class="item ${typeClass}">
-                        ${icon} <strong>Name:</strong> ${o.name}<br>
-                        <span style="font-size:10px; opacity:0.7">Type: ${typeName}</span>
-                    </div>
-                `;
-                
-                outputDiv.innerHTML += html;
             });
 
-            if (count === 0) {
-                outputDiv.innerHTML = "<h2 style='color:red'>فایل خالی است!</h2>";
+            if (!foundSkin) {
+                resultBox.innerHTML = "<h3 style='color:red'>هیچ مدل SkinnedMesh پیدا نشد!</h3><p>احتمالاً مدل به صورت Static Mesh اکسپورت شده.</p>";
             }
 
         }, undefined, function(e) {
-            outputDiv.innerHTML = "<h2 style='color:red'>خطا در لود فایل!</h2><p>مطمئن شو اسم فایل Robotx.glb باشه.</p>";
-            console.error(e);
+            resultBox.innerHTML = "خطا در لود فایل.";
         });
 
         function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
