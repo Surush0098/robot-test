@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ربات هوشمند - کنترل دقیق Mixamo</title>
+    <title>کنترل نهایی ربات</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #1a1a1a; }
-        canvas { display: block; }
-        #loading {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            color: #00ffcc; font-family: sans-serif; font-size: 24px; font-weight: bold;
-            text-shadow: 0 0 10px #00ffcc;
+        body { margin: 0; overflow: hidden; background-color: #202020; }
+        #debug {
+            position: absolute; top: 10px; left: 10px;
+            color: #00ff00; background: rgba(0,0,0,0.8);
+            padding: 10px; font-family: monospace; pointer-events: none;
         }
     </style>
     <script type="importmap">
@@ -23,139 +22,122 @@
     </script>
 </head>
 <body>
-    <div id="loading">در حال آماده‌سازی ربات...</div>
+    <div id="debug">در حال لود کردن Robotx.glb ...</div>
 
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-        // --- 1. تنظیمات صحنه (Scene Setup) ---
+        // 1. تنظیمات صحنه
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x222222);
-        // اضافه کردن مه (Fog) برای عمق دادن به صحنه
-        scene.fog = new THREE.Fog(0x222222, 5, 15);
-
+        scene.background = new THREE.Color(0x202020);
+        
         const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
-        camera.position.set(0, 1.4, 4); // کمی زوم‌ عقب‌تر برای دیدن بدن
+        camera.position.set(0, 1.5, 4); // دوربین روبروی ربات
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMap.enabled = true; // سایه روشن
-        renderer.toneMapping = THREE.ACESFilmicToneMapping; // رنگ‌بندی سینمایی
         document.body.appendChild(renderer.domElement);
 
-        // --- 2. نورپردازی حرفه‌ای (Lighting) ---
+        // نورپردازی قوی
         const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 2);
         hemiLight.position.set(0, 20, 0);
         scene.add(hemiLight);
-
         const dirLight = new THREE.DirectionalLight(0xffffff, 2);
-        dirLight.position.set(3, 10, 10);
-        dirLight.castShadow = true;
+        dirLight.position.set(5, 10, 7);
         scene.add(dirLight);
 
-        // --- 3. متغیرهای کنترل استخوان ---
+        // متغیرها
         let headBone = null;
         let neckBone = null;
         let spineBone = null;
-        
-        // ذخیره زاویه اولیه استخوان‌ها (خیلی مهم برای مدل‌های Mixamo)
-        // چون این مدل‌ها ممکنه در حالت عادی زاویه داشته باشن
-        let initialHeadRot = { x: 0, y: 0, z: 0 };
-        let initialNeckRot = { x: 0, y: 0, z: 0 };
-        let initialSpineRot = { x: 0, y: 0, z: 0 };
-
         let mouse = new THREE.Vector2();
+        const debugDiv = document.getElementById('debug');
 
-        // --- 4. لود کردن مدل (Loader) ---
+        // 2. لودر مدل
         const loader = new GLTFLoader();
         
-        // !!! دقت کن اسم فایل دقیقاً همون چیزی باشه که آپلود کردی !!!
-        loader.load('./Untitled.glb', function (gltf) {
+        loader.load('./Robotx.glb', function (gltf) {
             const model = gltf.scene;
             scene.add(model);
 
-            // فعال کردن سایه برای تمام اجزا
+            // نمایش اسکلت برای اطمینان (خطوط رنگی)
+            const skeleton = new THREE.SkeletonHelper(model);
+            scene.add(skeleton);
+
+            console.log("--- جستجوی استخوان‌ها ---");
+            let found = false;
+
+            // جستجوی دقیق بر اساس لیستی که دادی
             model.traverse((o) => {
-                if (o.isMesh) {
-                    o.castShadow = true;
-                    o.receiveShadow = true;
+                if (o.isBone) {
+                    // حذف کاراکترهای اضافه برای جستجوی بهتر (مثلاً mixamorig:Head بشه mixamorigHead)
+                    const cleanName = o.name.replace(/[:_]/g, "").toLowerCase();
+                    
+                    if (cleanName.includes("head") && !cleanName.includes("top")) {
+                        headBone = o;
+                        console.log("سر پیدا شد:", o.name);
+                        found = true;
+                    }
+                    if (cleanName.includes("neck")) {
+                        neckBone = o;
+                    }
+                    if (cleanName.includes("spine2")) {
+                        spineBone = o;
+                    }
                 }
             });
 
-            // --- دریافت مستقیم استخوان‌ها از لیست شما ---
-            headBone = model.getObjectByName('mixamorigHead');
-            neckBone = model.getObjectByName('mixamorigNeck');
-            spineBone = model.getObjectByName('mixamorigSpine2');
-
-            // نکته: گاهی در تبدیل glb دونقطه (:) حذف میشه یا تبدیل به _ میشه.
-            // اگر خط بالا کار نکرد، خط‌های زیر جایگزین هوشمند هستن:
-            if (!headBone) headBone = model.getObjectByName('mixamorig:Head');
-            if (!neckBone) neckBone = model.getObjectByName('mixamorig:Neck');
-            if (!spineBone) spineBone = model.getObjectByName('mixamorig:Spine2');
-
-            // ذخیره وضعیت اولیه (Rest Pose)
-            if (headBone) {
-                initialHeadRot = { x: headBone.rotation.x, y: headBone.rotation.y, z: headBone.rotation.z };
-                console.log("Head Found!");
-            }
-            if (neckBone) {
-                initialNeckRot = { x: neckBone.rotation.x, y: neckBone.rotation.y, z: neckBone.rotation.z };
-            }
-            if (spineBone) {
-                initialSpineRot = { x: spineBone.rotation.x, y: spineBone.rotation.y, z: spineBone.rotation.z };
+            if (found) {
+                debugDiv.innerHTML = "ربات آماده است!<br>موس را حرکت دهید.";
+                debugDiv.style.color = "#00ff00";
+            } else {
+                debugDiv.innerHTML = "استخوان Head پیدا نشد!";
+                debugDiv.style.color = "red";
             }
 
-            // تنظیم موقعیت
-            model.position.y = -1; 
-            document.getElementById('loading').style.display = 'none';
+            // پایین آوردن مدل
+            model.position.y = -1;
 
-        }, undefined, function (error) {
-            console.error(error);
-            document.getElementById('loading').innerText = "خطا در بارگذاری!";
-            document.getElementById('loading').style.color = "red";
+        }, undefined, function (e) {
+            console.error(e);
+            debugDiv.innerHTML = "خطا در لود فایل. اسم فایل درسته؟";
+            debugDiv.style.color = "red";
         });
 
-        // --- 5. ایونت موس ---
+        // 3. حرکت موس
         document.addEventListener('mousemove', (e) => {
             mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         });
 
+        // ریسایز صفحه
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // --- 6. حلقه انیمیشن (The Loop) ---
+        // 4. انیمیشن لوپ
         function animate() {
             requestAnimationFrame(animate);
 
+            // اینجا جادو اتفاق میوفته
             if (headBone) {
-                // محاسبه زاویه هدف
-                // mouse.x (چپ و راست) روی محور Y می‌چرخه
-                // mouse.y (بالا و پایین) روی محور X می‌چرخه
+                // محدود کردن زاویه چرخش (که گردنش نشکنه)
+                // عدد 0.8 شدت چرخش به چپ و راسته
+                // عدد 0.5 شدت چرخش به بالا و پایینه
                 
-                // شدت چرخش (هرچی عدد کمتر، چرخش کمتر)
-                const lookStrength = 0.6; 
+                headBone.rotation.y = mouse.x * 0.8; 
+                headBone.rotation.x = mouse.y * 0.5;
 
-                // استفاده از Lerp برای نرمی حرکت
-                // فرمول: زاویه فعلی + (زاویه موس * شدت)
-                
-                // چرخش سر
-                headBone.rotation.y = THREE.MathUtils.lerp(headBone.rotation.y, initialHeadRot.y + (mouse.x * 0.5), 0.1);
-                headBone.rotation.x = THREE.MathUtils.lerp(headBone.rotation.x, initialHeadRot.x + (mouse.y * 0.3), 0.1);
-
-                // چرخش گردن (با شدت کمتر برای طبیعی بودن)
-                if (neckBone) {
-                    neckBone.rotation.y = THREE.MathUtils.lerp(neckBone.rotation.y, initialNeckRot.y + (mouse.x * 0.3), 0.1);
-                    neckBone.rotation.x = THREE.MathUtils.lerp(neckBone.rotation.x, initialNeckRot.x + (mouse.y * 0.2), 0.1);
+                if (neckBone) { // گردن هم کمی بچرخه
+                    neckBone.rotation.y = mouse.x * 0.4;
+                    neckBone.rotation.x = mouse.y * 0.3;
                 }
-
-                // چرخش ریز ستون فقرات (برای حس زنده بودن بدن)
-                if (spineBone) {
-                    spineBone.rotation.y = THREE.MathUtils.lerp(spineBone.rotation.y, initialSpineRot.y + (mouse.x * 0.1), 0.05);
+                
+                if (spineBone) { // کمر هم خیلی کم
+                    spineBone.rotation.y = mouse.x * 0.2;
                 }
             }
 
