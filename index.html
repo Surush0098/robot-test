@@ -2,16 +2,24 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>تشخیص هوشمند سر (بر اساس ارتفاع)</title>
+    <title>لیست کامل اجزای فایل</title>
     <style>
-        body { margin: 0; background-color: #222; overflow: hidden; }
-        #status {
-            position: absolute; top: 20px; left: 20px;
-            background: rgba(0,0,0,0.8); color: white; padding: 15px;
-            font-family: sans-serif; border-radius: 8px; pointer-events: none;
+        body { margin: 0; background-color: #222; overflow: hidden; font-family: monospace; }
+        
+        /* استایل لیست سمت راست */
+        #list-container {
+            position: absolute; top: 0; right: 0; width: 400px; height: 100vh;
+            background: #111; border-left: 2px solid #555;
+            overflow-y: auto; padding: 10px; box-sizing: border-box;
+            font-size: 13px; z-index: 10;
         }
-        .success { color: #0f0; font-weight: bold; }
-        .fail { color: #f00; font-weight: bold; }
+        
+        .item { margin-bottom: 5px; padding: 5px; border-bottom: 1px solid #333; }
+        .bone { color: #00ff00; font-weight: bold; } /* استخوان سبز */
+        .mesh { color: #ffffff; } /* مش سفید */
+        .other { color: #888; } /* بقیه چیزها خاکستری */
+        
+        h3 { color: white; margin-top: 0; border-bottom: 1px solid white; padding-bottom: 5px;}
     </style>
     <script type="importmap">
         {
@@ -23,89 +31,86 @@
     </script>
 </head>
 <body>
-    <div id="status">در حال محاسبه ارتفاع استخوان‌ها...</div>
+    <div id="list-container">
+        <h3>لیست تمام اجزای فایل Robotx.glb</h3>
+        <div id="output">در حال خواندن فایل...</div>
+    </div>
 
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+        // 1. صحنه ساده برای نمایش مدل
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x222222);
-        const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 100);
+        scene.background = new THREE.Color(0x333333);
+        const camera = new THREE.PerspectiveCamera(50, (window.innerWidth-400)/window.innerHeight, 0.1, 100);
         camera.position.set(0, 1.5, 4);
         
         const renderer = new THREE.WebGLRenderer({antialias: true});
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setSize(window.innerWidth - 400, window.innerHeight); // جای خالی برای لیست
         document.body.appendChild(renderer.domElement);
+        
+        const controls = new OrbitControls(camera, renderer.domElement);
+        scene.add(new THREE.AmbientLight(0xffffff, 2));
 
-        const light = new THREE.DirectionalLight(0xffffff, 2);
-        light.position.set(1, 2, 3);
-        scene.add(light);
-        scene.add(new THREE.AmbientLight(0xffffff, 1));
+        const outputDiv = document.getElementById('output');
 
+        // 2. لودر فایل
         const loader = new GLTFLoader();
-        let headBone = null;
-        let mouse = new THREE.Vector2();
-        const statusDiv = document.getElementById('status');
-
+        
         loader.load('./Robotx.glb', function(gltf) {
-            const model = gltf.scene;
-            scene.add(model);
-            model.position.y = -1;
+            scene.add(gltf.scene);
+            
+            // نمایش اسکلت (برای اطمینان چشمی)
+            const helper = new THREE.SkeletonHelper(gltf.scene);
+            scene.add(helper);
 
-            // --- الگوریتم پیدا کردن بلندترین استخوان ---
-            let highestY = -Infinity;
-            let bestBone = null;
+            // پاک کردن پیام لودینگ
+            outputDiv.innerHTML = "";
+            let count = 0;
 
-            scene.updateMatrixWorld(true); // آپدیت مختصات جهانی
+            // --- اسکن کل فایل ---
+            gltf.scene.traverse((o) => {
+                count++;
+                
+                // تشخیص نوع آبجکت
+                let typeClass = "other";
+                let typeName = o.type;
+                let icon = "🔹";
 
-            model.traverse((o) => {
                 if (o.isBone) {
-                    // گرفتن موقعیت جهانی استخوان
-                    const position = new THREE.Vector3();
-                    o.getWorldPosition(position);
-
-                    // اگر این استخوان از قبلی بالاتر بود، انتخابش کن
-                    // (به شرطی که توی اسمش End نباشه چون اون نوکِ استخوانه و نمی‌چرخه)
-                    if (position.y > highestY && !o.name.includes('End')) {
-                        highestY = position.y;
-                        bestBone = o;
-                    }
+                    typeClass = "bone";
+                    typeName = "BONE (استخوان)";
+                    icon = "🦴";
+                } else if (o.isMesh || o.isSkinnedMesh) {
+                    typeClass = "mesh";
+                    typeName = "MESH";
+                    icon = "📦";
                 }
+
+                // ساخت HTML برای هر آیتم
+                const html = `
+                    <div class="item ${typeClass}">
+                        ${icon} <strong>Name:</strong> ${o.name}<br>
+                        <span style="font-size:10px; opacity:0.7">Type: ${typeName}</span>
+                    </div>
+                `;
+                
+                outputDiv.innerHTML += html;
             });
 
-            if (bestBone) {
-                headBone = bestBone;
-                statusDiv.innerHTML = `سر پیدا شد! <br> نام سیستم: <span class="success">${headBone.name}</span><br>موس را تکان دهید.`;
-                console.log("Highest Bone Found:", headBone.name);
-            } else {
-                statusDiv.innerHTML = "<span class='fail'>هیچ استخوانی پیدا نشد! (آیا اکسپورت مکس درسته؟)</span>";
+            if (count === 0) {
+                outputDiv.innerHTML = "<h2 style='color:red'>فایل خالی است!</h2>";
             }
 
         }, undefined, function(e) {
-            statusDiv.innerHTML = "خطا در لود فایل";
+            outputDiv.innerHTML = "<h2 style='color:red'>خطا در لود فایل!</h2><p>مطمئن شو اسم فایل Robotx.glb باشه.</p>";
+            console.error(e);
         });
 
-        document.addEventListener('mousemove', (e) => {
-            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-        });
-
-        function animate() {
-            requestAnimationFrame(animate);
-            if (headBone) {
-                headBone.rotation.y = mouse.x * 0.8; 
-                headBone.rotation.x = mouse.y * 0.5;
-            }
-            renderer.render(scene, camera);
-        }
+        function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
         animate();
-        
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
     </script>
 </body>
 </html>
