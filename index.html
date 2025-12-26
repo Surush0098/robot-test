@@ -1,127 +1,164 @@
 <!DOCTYPE html>
-<html lang="fa">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>مرحله ۲ – چرخش سر</title>
-    <style>
-        body {
-            margin: 0;
-            background-color: #222;
-            overflow: hidden;
-            font-family: monospace;
-        }
-        #debug {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background: rgba(0,0,0,0.9);
-            color: #00ff00;
-            padding: 15px;
-            border: 1px solid #555;
-            font-size: 13px;
-        }
-    </style>
+<meta charset="UTF-8">
+<title>Physical Character + IK</title>
+<style>
+body { margin:0; overflow:hidden; background:#222 }
+</style>
 
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-        }
-    }
-    </script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
+  }
+}
+</script>
 </head>
 
 <body>
-<div id="debug">در حال لود مدل...</div>
-
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { CCDIKSolver } from 'three/addons/animation/CCDIKSolver.js';
+import * as CANNON from 'cannon-es';
 
-// ---------- صحنه ----------
+// ---------- Scene ----------
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x333333);
 
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.set(0, 1.5, 4);
+const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0, 1.6, 4);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// ---------- نور ----------
-scene.add(new THREE.AmbientLight(0xffffff, 1));
+scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+const dl = new THREE.DirectionalLight(0xffffff, 1.5);
+dl.position.set(2,4,3);
+scene.add(dl);
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 2);
-dirLight.position.set(2, 3, 4);
-scene.add(dirLight);
-
-// ---------- Debug ----------
-const debugDiv = document.getElementById('debug');
-
-// ---------- Loader ----------
-const loader = new GLTFLoader();
-
-let headBone = null;
-
-loader.load('./Robotx.glb', (gltf) => {
-
-    const model = gltf.scene;
-    scene.add(model);
-    model.position.y = -1;
-
-    let skinnedMesh = null;
-
-    model.traverse((o) => {
-        if (o.isSkinnedMesh) {
-            skinnedMesh = o;
-        }
-    });
-
-    if (!skinnedMesh) {
-        debugDiv.innerHTML = "❌ SkinnedMesh پیدا نشد";
-        return;
-    }
-
-    // گرفتن Bone سر
-    skinnedMesh.skeleton.bones.forEach(bone => {
-        if (bone.name === "mixamorigHead") {
-            headBone = bone;
-        }
-    });
-
-    if (headBone) {
-        debugDiv.innerHTML = "✅ mixamorigHead پیدا شد — در حال چرخش...";
-        console.log("Head bone:", headBone);
-    } else {
-        debugDiv.innerHTML = "❌ mixamorigHead پیدا نشد";
-    }
-
-}, undefined, (err) => {
-    console.error(err);
+// ---------- Physics World ----------
+const world = new CANNON.World({
+  gravity: new CANNON.Vec3(0, -9.82, 0)
 });
 
-// ---------- انیمیشن ----------
-let t = 0;
+// Ground
+const groundBody = new CANNON.Body({
+  type: CANNON.Body.STATIC,
+  shape: new CANNON.Plane()
+});
+groundBody.quaternion.setFromEuler(-Math.PI/2,0,0);
+world.addBody(groundBody);
 
-function animate() {
-    requestAnimationFrame(animate);
+// Visual ground
+const groundMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(10,10),
+  new THREE.MeshStandardMaterial({color:0x444444})
+);
+groundMesh.rotation.x = -Math.PI/2;
+scene.add(groundMesh);
 
-    if (headBone) {
-        t += 0.02;
-        headBone.rotation.y = Math.sin(t) * 0.6; // چپ و راست
+// ---------- Mouse ----------
+const mouse = new THREE.Vector2();
+window.addEventListener('mousemove', e=>{
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+});
+
+// ---------- Load Model ----------
+const loader = new GLTFLoader();
+
+let skinnedMesh, head, neck, solver;
+let rightHand, leftHand;
+let ikTargetR = new THREE.Object3D();
+let ikTargetL = new THREE.Object3D();
+scene.add(ikTargetR, ikTargetL);
+
+loader.load('./Robotx.glb', gltf => {
+
+  const model = gltf.scene;
+  model.position.set(0,0,0);
+  scene.add(model);
+
+  model.traverse(o=>{
+    if(o.isSkinnedMesh) skinnedMesh = o;
+  });
+
+  const bones = {};
+  skinnedMesh.skeleton.bones.forEach(b=>bones[b.name]=b);
+
+  head = bones.mixamorigHead;
+  neck = bones.mixamorigNeck;
+  rightHand = bones.mixamorigRightHand;
+  leftHand = bones.mixamorigLeftHand;
+
+  // ---------- IK ----------
+  solver = new CCDIKSolver(skinnedMesh, [
+    {
+      target: skinnedMesh.skeleton.bones.indexOf(rightHand),
+      effector: skinnedMesh.skeleton.bones.indexOf(rightHand),
+      links: [
+        { index: skinnedMesh.skeleton.bones.indexOf(bones.mixamorigRightForeArm) },
+        { index: skinnedMesh.skeleton.bones.indexOf(bones.mixamorigRightArm) }
+      ],
+      iteration: 10
+    },
+    {
+      target: skinnedMesh.skeleton.bones.indexOf(leftHand),
+      effector: skinnedMesh.skeleton.bones.indexOf(leftHand),
+      links: [
+        { index: skinnedMesh.skeleton.bones.indexOf(bones.mixamorigLeftForeArm) },
+        { index: skinnedMesh.skeleton.bones.indexOf(bones.mixamorigLeftArm) }
+      ],
+      iteration: 10
     }
+  ]);
 
-    renderer.render(scene, camera);
+});
+
+// ---------- Raycast Target ----------
+const raycaster = new THREE.Raycaster();
+const targetPoint = new THREE.Vector3();
+
+// ---------- Animate ----------
+function animate(){
+  requestAnimationFrame(animate);
+
+  world.step(1/60);
+
+  // mouse → world point
+  raycaster.setFromCamera(mouse, camera);
+  const p = raycaster.ray.at(2, targetPoint);
+
+  ikTargetR.position.lerp(p, 0.15);
+  ikTargetL.position.lerp(p, 0.15);
+
+  if(head){
+    head.lookAt(p);
+    head.rotation.x = THREE.MathUtils.clamp(head.rotation.x, -0.6, 0.6);
+    head.rotation.y = THREE.MathUtils.clamp(head.rotation.y, -0.8, 0.8);
+  }
+
+  if(neck){
+    neck.lookAt(p);
+    neck.rotation.x *= 0.4;
+    neck.rotation.y *= 0.4;
+  }
+
+  if(solver) solver.update();
+
+  renderer.render(scene,camera);
 }
 animate();
 
-// ---------- Resize ----------
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+window.addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
 });
 </script>
 </body>
