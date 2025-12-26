@@ -2,164 +2,108 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Physical Character + IK</title>
+<title>Babylon.js – Phase 1</title>
 <style>
-body { margin:0; overflow:hidden; background:#222 }
+html, body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+}
+#renderCanvas {
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+}
 </style>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-    "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
-  }
-}
-</script>
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
+<script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+<script src="https://cdn.babylonjs.com/inspector/babylon.inspector.bundle.js"></script>
 </head>
 
 <body>
-<script type="module">
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { CCDIKSolver } from 'three/addons/animation/CCDIKSolver.js';
-import * as CANNON from 'cannon-es';
+<canvas id="renderCanvas"></canvas>
 
-// ---------- Scene ----------
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x333333);
+<script>
+const canvas = document.getElementById("renderCanvas");
+const engine = new BABYLON.Engine(canvas, true);
 
-const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 100);
-camera.position.set(0, 1.6, 4);
+const createScene = async () => {
 
-const renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setSize(innerWidth, innerHeight);
-document.body.appendChild(renderer.domElement);
+    const scene = new BABYLON.Scene(engine);
+    scene.clearColor = new BABYLON.Color4(0.15, 0.15, 0.15, 1);
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-const dl = new THREE.DirectionalLight(0xffffff, 1.5);
-dl.position.set(2,4,3);
-scene.add(dl);
+    // ---------- Camera ----------
+    const camera = new BABYLON.ArcRotateCamera(
+        "cam",
+        Math.PI / 2,
+        Math.PI / 2.3,
+        4,
+        new BABYLON.Vector3(0, 1, 0),
+        scene
+    );
+    camera.attachControl(canvas, true);
 
-// ---------- Physics World ----------
-const world = new CANNON.World({
-  gravity: new CANNON.Vec3(0, -9.82, 0)
-});
+    // ---------- Light ----------
+    new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0, 1, 0), scene);
+    const dir = new BABYLON.DirectionalLight(
+        "dir",
+        new BABYLON.Vector3(-0.5, -1, -0.5),
+        scene
+    );
+    dir.position = new BABYLON.Vector3(3, 6, 3);
 
-// Ground
-const groundBody = new CANNON.Body({
-  type: CANNON.Body.STATIC,
-  shape: new CANNON.Plane()
-});
-groundBody.quaternion.setFromEuler(-Math.PI/2,0,0);
-world.addBody(groundBody);
+    // ---------- Ground ----------
+    const ground = BABYLON.MeshBuilder.CreateGround(
+        "ground",
+        { width: 10, height: 10 },
+        scene
+    );
+    ground.position.y = 0;
 
-// Visual ground
-const groundMesh = new THREE.Mesh(
-  new THREE.PlaneGeometry(10,10),
-  new THREE.MeshStandardMaterial({color:0x444444})
-);
-groundMesh.rotation.x = -Math.PI/2;
-scene.add(groundMesh);
+    const gMat = new BABYLON.StandardMaterial("gmat", scene);
+    gMat.diffuseColor = new BABYLON.Color3(0.25, 0.25, 0.25);
+    ground.material = gMat;
 
-// ---------- Mouse ----------
-const mouse = new THREE.Vector2();
-window.addEventListener('mousemove', e=>{
-  mouse.x = (e.clientX / innerWidth) * 2 - 1;
-  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
-});
+    // ---------- Load Model ----------
+    const result = await BABYLON.SceneLoader.ImportMeshAsync(
+        "",
+        "./",
+        "Robotx.glb",
+        scene
+    );
 
-// ---------- Load Model ----------
-const loader = new GLTFLoader();
+    const root = result.meshes[0];
+    root.position.set(0, 0, 0);
 
-let skinnedMesh, head, neck, solver;
-let rightHand, leftHand;
-let ikTargetR = new THREE.Object3D();
-let ikTargetL = new THREE.Object3D();
-scene.add(ikTargetR, ikTargetL);
+    // ---------- Find Skeleton ----------
+    const skeleton = result.skeletons[0];
+    console.log("Skeleton:", skeleton);
 
-loader.load('./Robotx.glb', gltf => {
-
-  const model = gltf.scene;
-  model.position.set(0,0,0);
-  scene.add(model);
-
-  model.traverse(o=>{
-    if(o.isSkinnedMesh) skinnedMesh = o;
-  });
-
-  const bones = {};
-  skinnedMesh.skeleton.bones.forEach(b=>bones[b.name]=b);
-
-  head = bones.mixamorigHead;
-  neck = bones.mixamorigNeck;
-  rightHand = bones.mixamorigRightHand;
-  leftHand = bones.mixamorigLeftHand;
-
-  // ---------- IK ----------
-  solver = new CCDIKSolver(skinnedMesh, [
-    {
-      target: skinnedMesh.skeleton.bones.indexOf(rightHand),
-      effector: skinnedMesh.skeleton.bones.indexOf(rightHand),
-      links: [
-        { index: skinnedMesh.skeleton.bones.indexOf(bones.mixamorigRightForeArm) },
-        { index: skinnedMesh.skeleton.bones.indexOf(bones.mixamorigRightArm) }
-      ],
-      iteration: 10
-    },
-    {
-      target: skinnedMesh.skeleton.bones.indexOf(leftHand),
-      effector: skinnedMesh.skeleton.bones.indexOf(leftHand),
-      links: [
-        { index: skinnedMesh.skeleton.bones.indexOf(bones.mixamorigLeftForeArm) },
-        { index: skinnedMesh.skeleton.bones.indexOf(bones.mixamorigLeftArm) }
-      ],
-      iteration: 10
+    // ---------- Center on feet ----------
+    const feetBone = skeleton.bones.find(b => b.name === "mixamorigLeftFoot");
+    if (feetBone) {
+        const m = feetBone.getAbsolutePosition();
+        root.position.y -= m.y;
     }
-  ]);
 
+    // ---------- Debug ----------
+    window.scene = scene;
+    window.skeleton = skeleton;
+
+    console.log(
+        skeleton.bones.map((b, i) => i + " : " + b.name)
+    );
+
+    return scene;
+};
+
+createScene().then(scene => {
+    engine.runRenderLoop(() => scene.render());
 });
 
-// ---------- Raycast Target ----------
-const raycaster = new THREE.Raycaster();
-const targetPoint = new THREE.Vector3();
-
-// ---------- Animate ----------
-function animate(){
-  requestAnimationFrame(animate);
-
-  world.step(1/60);
-
-  // mouse → world point
-  raycaster.setFromCamera(mouse, camera);
-  const p = raycaster.ray.at(2, targetPoint);
-
-  ikTargetR.position.lerp(p, 0.15);
-  ikTargetL.position.lerp(p, 0.15);
-
-  if(head){
-    head.lookAt(p);
-    head.rotation.x = THREE.MathUtils.clamp(head.rotation.x, -0.6, 0.6);
-    head.rotation.y = THREE.MathUtils.clamp(head.rotation.y, -0.8, 0.8);
-  }
-
-  if(neck){
-    neck.lookAt(p);
-    neck.rotation.x *= 0.4;
-    neck.rotation.y *= 0.4;
-  }
-
-  if(solver) solver.update();
-
-  renderer.render(scene,camera);
-}
-animate();
-
-window.addEventListener('resize', ()=>{
-  camera.aspect = innerWidth/innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
+window.addEventListener("resize", () => engine.resize());
 </script>
 </body>
 </html>
