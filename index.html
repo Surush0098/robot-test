@@ -1,25 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Babylon.js – Phase 1</title>
-<style>
-html, body {
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    overflow: hidden;
-}
-#renderCanvas {
-    width: 100%;
-    height: 100%;
-    touch-action: none;
-}
-</style>
-
-<script src="https://cdn.babylonjs.com/babylon.js"></script>
-<script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
-<script src="https://cdn.babylonjs.com/inspector/babylon.inspector.bundle.js"></script>
+    <meta charset="UTF-8">
+    <title>Babylon.js – Robot LookAt Mouse</title>
+    <style>
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+        #renderCanvas {
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+    </style>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
 </head>
 
 <body>
@@ -30,9 +28,11 @@ const canvas = document.getElementById("renderCanvas");
 const engine = new BABYLON.Engine(canvas, true);
 
 const createScene = async () => {
-
     const scene = new BABYLON.Scene(engine);
     scene.clearColor = new BABYLON.Color4(0.15, 0.15, 0.15, 1);
+
+    // 1. تعریف متغیرهای استخوان‌ها (اضافه شده)
+    let headBone, neckBone;
 
     // ---------- Camera ----------
     const camera = new BABYLON.ArcRotateCamera(
@@ -47,54 +47,66 @@ const createScene = async () => {
 
     // ---------- Light ----------
     new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0, 1, 0), scene);
-    const dir = new BABYLON.DirectionalLight(
-        "dir",
-        new BABYLON.Vector3(-0.5, -1, -0.5),
-        scene
-    );
+    const dir = new BABYLON.DirectionalLight("dir", new BABYLON.Vector3(-0.5, -1, -0.5), scene);
     dir.position = new BABYLON.Vector3(3, 6, 3);
 
     // ---------- Ground ----------
-    const ground = BABYLON.MeshBuilder.CreateGround(
-        "ground",
-        { width: 10, height: 10 },
-        scene
-    );
-    ground.position.y = 0;
-
+    const ground = BABYLON.MeshBuilder.CreateGround("ground", { width: 10, height: 10 }, scene);
     const gMat = new BABYLON.StandardMaterial("gmat", scene);
     gMat.diffuseColor = new BABYLON.Color3(0.25, 0.25, 0.25);
     ground.material = gMat;
 
     // ---------- Load Model ----------
-    const result = await BABYLON.SceneLoader.ImportMeshAsync(
-        "",
-        "./",
-        "Robotx.glb",
-        scene
-    );
-
+    const result = await BABYLON.SceneLoader.ImportMeshAsync("", "./", "Robotx.glb", scene);
     const root = result.meshes[0];
     root.position.set(0, 0, 0);
 
-    // ---------- Find Skeleton ----------
+    // ---------- Find Skeleton & Bones ----------
     const skeleton = result.skeletons[0];
-    console.log("Skeleton:", skeleton);
+    
+    // 2. پیدا کردن استخوان‌های سر و گردن (اضافه شده)
+    headBone = skeleton.bones.find(b => b.name === "mixamorigHead");
+    neckBone = skeleton.bones.find(b => b.name === "mixamorigNeck");
 
-    // ---------- Center on feet ----------
+    // Center on feet
     const feetBone = skeleton.bones.find(b => b.name === "mixamorigLeftFoot");
     if (feetBone) {
         const m = feetBone.getAbsolutePosition();
         root.position.y -= m.y;
     }
 
-    // ---------- Debug ----------
-    window.scene = scene;
-    window.skeleton = skeleton;
+    // 3. تنظیمات مربوط به موس و ری‌کستینگ (اضافه شده)
+    const mouse = new BABYLON.Vector2();
+    let lookTarget = new BABYLON.Vector3();
 
-    console.log(
-        skeleton.bones.map((b, i) => i + " : " + b.name)
-    );
+    scene.onPointerObservable.add((pointerInfo) => {
+        if (pointerInfo.type === BABYLON.PointerEventTypes.POINTERMOVE) {
+            mouse.x = (pointerInfo.event.clientX / engine.getRenderWidth()) * 2 - 1;
+            mouse.y = -(pointerInfo.event.clientY / engine.getRenderHeight()) * 2 + 1;
+        }
+    });
+
+    // 4. منطق چرخش استخوان‌ها در حلقه رندر (اضافه شده)
+    scene.onBeforeRenderObservable.add(() => {
+        if (!headBone || !neckBone) return;
+
+        // ایجاد Ray بر اساس موقعیت موس
+        const ray = scene.createPickingRay(
+            engine.getRenderWidth() * (mouse.x + 1) / 2,
+            engine.getRenderHeight() * (1 - mouse.y) / 2,
+            BABYLON.Matrix.Identity(),
+            camera
+        );
+
+        const target = ray.origin.add(ray.direction.scale(3));
+        lookTarget.copyFrom(target);
+
+        // چرخش استخوان سر
+        headBone.lookAt(lookTarget, 0, Math.PI, Math.PI / 2);
+
+        // چرخش استخوان گردن (با زاویه محدودتر برای نرمی بیشتر)
+        neckBone.lookAt(lookTarget, 0, Math.PI, Math.PI / 3);
+    });
 
     return scene;
 };
