@@ -2,15 +2,16 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>تست حرکت اجباری</title>
+    <title>کنترل با نام دقیق</title>
     <style>
-        body { margin: 0; background-color: #333; overflow: hidden; }
-        #status {
+        body { margin: 0; background-color: #222; overflow: hidden; font-family: monospace; }
+        #debug {
             position: absolute; top: 10px; left: 10px;
-            background: rgba(0,0,0,0.8); color: lime; padding: 10px;
-            font-family: monospace; font-size: 14px; pointer-events: none;
-            max-height: 90vh; overflow-y: auto; width: 300px;
+            background: rgba(0,0,0,0.9); color: white; padding: 15px;
+            border: 1px solid #555; pointer-events: none;
         }
+        .found { color: #00ff00; font-weight: bold; }
+        .missing { color: #ff0000; font-weight: bold; }
     </style>
     <script type="importmap">
         {
@@ -22,17 +23,15 @@
     </script>
 </head>
 <body>
-    <div id="status">در حال لود...</div>
+    <div id="debug">در حال جستجوی نام‌های دقیق...</div>
 
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
         // 1. صحنه
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x222222);
-        
+        scene.background = new THREE.Color(0x333333);
         const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 100);
         camera.position.set(0, 1.5, 4);
         
@@ -40,17 +39,27 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
         
-        const controls = new OrbitControls(camera, renderer.domElement);
-        scene.add(new THREE.DirectionalLight(0xffffff, 2));
+        const light = new THREE.DirectionalLight(0xffffff, 2);
+        light.position.set(1, 2, 3);
+        scene.add(light);
         scene.add(new THREE.AmbientLight(0xffffff, 1));
 
-        const logDiv = document.getElementById('status');
-        function log(msg) { logDiv.innerHTML += msg + "<br>"; }
+        // 2. لیست دقیق شما (بدون هیچ تغییری)
+        const targetBones = [
+            "mixamorig:Hips", "mixamorig:Spine", "mixamorig:Spine1", "mixamorig:Spine2",
+            "mixamorig:Neck", "mixamorig:Head", "mixamorig:HeadTop_End",
+            "mixamorig:RightShoulder", "mixamorig:RightArm", "mixamorig:RightForeArm", "mixamorig:RightHand",
+            "mixamorig:LeftShoulder", "mixamorig:LeftArm", "mixamorig:LeftForeArm", "mixamorig:LeftHand",
+            "mixamorig:RightUpLeg", "mixamorig:RightLeg", "mixamorig:RightFoot",
+            "mixamorig:LeftUpLeg", "mixamorig:LeftLeg", "mixamorig:LeftFoot"
+        ];
 
-        // لیست قطعاتی که قراره تکون بدیم
-        const movingParts = [];
+        // مخزنی برای نگه داشتن استخوان‌های پیدا شده
+        const bones = {}; 
+        let mouse = new THREE.Vector2();
+        const debugDiv = document.getElementById('debug');
 
-        // 2. لودر
+        // 3. لودر
         const loader = new GLTFLoader();
         
         loader.load('./Robotx.glb', function(gltf) {
@@ -58,63 +67,58 @@
             scene.add(model);
             model.position.y = -1;
 
-            log("--- شروع جستجو برای حرکت ---");
-
-            // گشتن توی کل اجزا (مهم نیست استخوان باشه یا نه)
+            // --- جستجوی دقیق ---
+            debugDiv.innerHTML = "نتیجه جستجوی دقیق:<br>";
+            
+            // گشتن در کل مدل
             model.traverse((o) => {
-                let name = o.name.toLowerCase();
-                
-                // لیست کلماتی که میخوایم تکون بخورن
-                // (سر، گردن، ستون فقرات، پاها)
-                if (name.includes('head') || 
-                    name.includes('neck') || 
-                    name.includes('spine') || 
-                    name.includes('leg') ||
-                    name.includes('arm')) {
-                    
-                    // فیلتر کردن چیزهای الکی (مثل نوک انگشت یا اندکتورها)
-                    if (!name.includes('end') && !name.includes('nub')) {
-                        movingParts.push(o);
-                        log(`✅ متصل شد: <span style="color:yellow">${o.name}</span>`);
-                    }
+                // چک می‌کنیم آیا اسم این آبجکت، دقیقاً توی لیست شما هست؟
+                if (targetBones.includes(o.name)) {
+                    bones[o.name] = o; // ذخیره استخوان
+                    console.log("پیدا شد:", o.name);
                 }
             });
 
-            if (movingParts.length === 0) {
-                log("<span style='color:red'>هیچ قطعه‌ای با این نام‌ها پیدا نشد!</span>");
+            // گزارش وضعیت Head
+            if (bones["mixamorig:Head"]) {
+                debugDiv.innerHTML += `<span class='found'>✅ mixamorig:Head پیدا شد و وصل شد.</span>`;
             } else {
-                log(`<br>تعداد ${movingParts.length} قطعه پیدا شد و داره تکون میخوره!`);
+                debugDiv.innerHTML += `<span class='missing'>❌ mixamorig:Head با این دیکته پیدا نشد.</span>`;
             }
 
         }, undefined, function(e) {
-            log("خطا در لود فایل.");
+            debugDiv.innerHTML = "خطا در لود فایل.";
         });
 
-        // 3. انیمیشن اتوماتیک
+        // موس
+        document.addEventListener('mousemove', (e) => {
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        });
+
+        // 4. انیمیشن
         function animate() {
             requestAnimationFrame(animate);
-            
-            const time = Date.now() * 0.002; // سرعت زمان
 
-            // چرخاندن تمام قطعات پیدا شده
-            movingParts.forEach(part => {
-                // یک حرکت سینوسی (رفت و برگشت)
-                // هر قطعه رو توی محورهای مختلف کمی تکون میدیم
-                
-                if (part.name.toLowerCase().includes('head')) {
-                    part.rotation.y = Math.sin(time) * 0.5; // سر: چپ و راست
-                } 
-                else if (part.name.toLowerCase().includes('neck')) {
-                    part.rotation.x = Math.sin(time) * 0.3; // گردن: بالا پایین
-                }
-                else if (part.name.toLowerCase().includes('spine')) {
-                    part.rotation.z = Math.sin(time) * 0.1; // کمر: کمی کج شدن
-                }
-                else {
-                    // دست و پا و بقیه چیزها
-                    part.rotation.z = Math.sin(time) * 0.2;
-                }
-            });
+            // حرکت سر (اگر پیدا شده باشد)
+            if (bones["mixamorig:Head"]) {
+                bones["mixamorig:Head"].rotation.y = mouse.x * 1.0; 
+                bones["mixamorig:Head"].rotation.x = mouse.y * 0.5;
+            }
+
+            // حرکت گردن (کمی نرم‌تر)
+            if (bones["mixamorig:Neck"]) {
+                bones["mixamorig:Neck"].rotation.y = mouse.x * 0.5;
+                bones["mixamorig:Neck"].rotation.x = mouse.y * 0.3;
+            }
+
+            // حرکت دست‌ها (برای اینکه بفهمیم بقیه لیست هم کار میکنه)
+            if (bones["mixamorig:RightArm"]) {
+                bones["mixamorig:RightArm"].rotation.z = -1 + (mouse.y * 0.2); // دست راست کمی بالا پایین بشه
+            }
+            if (bones["mixamorig:LeftArm"]) {
+                bones["mixamorig:LeftArm"].rotation.z = 1 - (mouse.y * 0.2); // دست چپ کمی بالا پایین بشه
+            }
 
             renderer.render(scene, camera);
         }
