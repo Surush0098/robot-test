@@ -1,135 +1,127 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fa">
 <head>
     <meta charset="UTF-8">
-    <title>کنترل با نام دقیق</title>
+    <title>مرحله ۱ – تست Skeleton</title>
     <style>
-        body { margin: 0; background-color: #222; overflow: hidden; font-family: monospace; }
+        body {
+            margin: 0;
+            background-color: #222;
+            overflow: hidden;
+            font-family: monospace;
+        }
         #debug {
-            position: absolute; top: 10px; left: 10px;
-            background: rgba(0,0,0,0.9); color: white; padding: 15px;
-            border: 1px solid #555; pointer-events: none;
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.9);
+            color: #00ff00;
+            padding: 15px;
+            border: 1px solid #555;
+            max-height: 90vh;
+            overflow-y: auto;
+            font-size: 13px;
         }
-        .found { color: #00ff00; font-weight: bold; }
-        .missing { color: #ff0000; font-weight: bold; }
     </style>
+
     <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-            }
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
         }
+    }
     </script>
 </head>
+
 <body>
-    <div id="debug">در حال جستجوی نام‌های دقیق...</div>
+<div id="debug">در حال لود مدل...</div>
 
-    <script type="module">
-        import * as THREE from 'three';
-        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-        // 1. صحنه
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x333333);
-        const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 100);
-        camera.position.set(0, 1.5, 4);
-        
-        const renderer = new THREE.WebGLRenderer({antialias: true});
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
-        
-        const light = new THREE.DirectionalLight(0xffffff, 2);
-        light.position.set(1, 2, 3);
-        scene.add(light);
-        scene.add(new THREE.AmbientLight(0xffffff, 1));
+// ---------- صحنه ----------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x333333);
 
-        // 2. لیست دقیق شما (بدون هیچ تغییری)
-        const targetBones = [
-            "mixamorig:Hips", "mixamorig:Spine", "mixamorig:Spine1", "mixamorig:Spine2",
-            "mixamorig:Neck", "mixamorig:Head", "mixamorig:HeadTop_End",
-            "mixamorig:RightShoulder", "mixamorig:RightArm", "mixamorig:RightForeArm", "mixamorig:RightHand",
-            "mixamorig:LeftShoulder", "mixamorig:LeftArm", "mixamorig:LeftForeArm", "mixamorig:LeftHand",
-            "mixamorig:RightUpLeg", "mixamorig:RightLeg", "mixamorig:RightFoot",
-            "mixamorig:LeftUpLeg", "mixamorig:LeftLeg", "mixamorig:LeftFoot"
-        ];
+const camera = new THREE.PerspectiveCamera(
+    50,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    100
+);
+camera.position.set(0, 1.5, 4);
 
-        // مخزنی برای نگه داشتن استخوان‌های پیدا شده
-        const bones = {}; 
-        let mouse = new THREE.Vector2();
-        const debugDiv = document.getElementById('debug');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
 
-        // 3. لودر
-        const loader = new GLTFLoader();
-        
-        loader.load('./Robotx.glb', function(gltf) {
-            const model = gltf.scene;
-            scene.add(model);
-            model.position.y = -1;
+// ---------- نور ----------
+scene.add(new THREE.AmbientLight(0xffffff, 1));
 
-            // --- جستجوی دقیق ---
-            debugDiv.innerHTML = "نتیجه جستجوی دقیق:<br>";
-            
-            // گشتن در کل مدل
-            model.traverse((o) => {
-                // چک می‌کنیم آیا اسم این آبجکت، دقیقاً توی لیست شما هست؟
-                if (targetBones.includes(o.name)) {
-                    bones[o.name] = o; // ذخیره استخوان
-                    console.log("پیدا شد:", o.name);
-                }
-            });
+const dirLight = new THREE.DirectionalLight(0xffffff, 2);
+dirLight.position.set(2, 3, 4);
+scene.add(dirLight);
 
-            // گزارش وضعیت Head
-            if (bones["mixamorig:Head"]) {
-                debugDiv.innerHTML += `<span class='found'>✅ mixamorig:Head پیدا شد و وصل شد.</span>`;
-            } else {
-                debugDiv.innerHTML += `<span class='missing'>❌ mixamorig:Head با این دیکته پیدا نشد.</span>`;
+// ---------- Debug ----------
+const debugDiv = document.getElementById('debug');
+
+// ---------- Loader ----------
+const loader = new GLTFLoader();
+
+loader.load(
+    './Robotx.glb',
+    (gltf) => {
+
+        const model = gltf.scene;
+        scene.add(model);
+        model.position.y = -1;
+
+        let skinnedMesh = null;
+
+        // پیدا کردن SkinnedMesh
+        model.traverse((o) => {
+            if (o.isSkinnedMesh) {
+                skinnedMesh = o;
+                console.log("✅ SkinnedMesh پیدا شد:", o.name);
             }
-
-        }, undefined, function(e) {
-            debugDiv.innerHTML = "خطا در لود فایل.";
         });
 
-        // موس
-        document.addEventListener('mousemove', (e) => {
-            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-        });
-
-        // 4. انیمیشن
-        function animate() {
-            requestAnimationFrame(animate);
-
-            // حرکت سر (اگر پیدا شده باشد)
-            if (bones["mixamorig:Head"]) {
-                bones["mixamorig:Head"].rotation.y = mouse.x * 1.0; 
-                bones["mixamorig:Head"].rotation.x = mouse.y * 0.5;
-            }
-
-            // حرکت گردن (کمی نرم‌تر)
-            if (bones["mixamorig:Neck"]) {
-                bones["mixamorig:Neck"].rotation.y = mouse.x * 0.5;
-                bones["mixamorig:Neck"].rotation.x = mouse.y * 0.3;
-            }
-
-            // حرکت دست‌ها (برای اینکه بفهمیم بقیه لیست هم کار میکنه)
-            if (bones["mixamorig:RightArm"]) {
-                bones["mixamorig:RightArm"].rotation.z = -1 + (mouse.y * 0.2); // دست راست کمی بالا پایین بشه
-            }
-            if (bones["mixamorig:LeftArm"]) {
-                bones["mixamorig:LeftArm"].rotation.z = 1 - (mouse.y * 0.2); // دست چپ کمی بالا پایین بشه
-            }
-
-            renderer.render(scene, camera);
+        if (!skinnedMesh) {
+            debugDiv.innerHTML = "❌ هیچ SkinnedMesh ای پیدا نشد";
+            console.error("❌ SkinnedMesh پیدا نشد");
+            return;
         }
 
-        animate();
-        
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+        // نمایش لیست استخوان‌ها
+        debugDiv.innerHTML = "<b>🦴 Skeleton Bones:</b><br><br>";
+
+        skinnedMesh.skeleton.bones.forEach((bone, i) => {
+            debugDiv.innerHTML += `${i} : ${bone.name}<br>`;
+            console.log(i, bone.name);
         });
-    </script>
+    },
+    undefined,
+    (err) => {
+        debugDiv.innerHTML = "❌ خطا در لود فایل";
+        console.error(err);
+    }
+);
+
+// ---------- رندر ----------
+function animate() {
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
+}
+animate();
+
+// ---------- Resize ----------
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
 </body>
 </html>
