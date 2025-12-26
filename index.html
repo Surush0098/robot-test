@@ -2,17 +2,18 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>استخراج استخوان‌های مخفی</title>
+    <title>تست نهایی استخوان‌ها</title>
     <style>
         body { margin: 0; background-color: #222; font-family: monospace; overflow: hidden; }
         #sidebar {
-            position: absolute; top: 0; right: 0; width: 350px; height: 100vh;
-            background: #151515; color: #ccc; overflow-y: auto; padding: 15px;
-            border-left: 2px solid #00ffcc; font-size: 13px;
+            position: absolute; top: 0; right: 0; width: 400px; height: 100vh;
+            background: #111; color: #ccc; overflow-y: auto; padding: 15px;
+            border-left: 3px solid #00ff00; font-size: 13px; z-index: 999;
         }
-        .highlight { color: #00ffcc; font-weight: bold; background: #222; padding: 2px; }
-        .mesh { color: white; border-bottom: 1px solid #555; padding: 5px 0; }
-        h3 { color: white; margin-top: 0; border-bottom: 1px solid #00ffcc; }
+        h3 { color: white; border-bottom: 1px solid #00ff00; padding-bottom: 5px; margin-top: 0; }
+        .success-box { background: #003300; border: 1px solid #00ff00; padding: 10px; margin: 10px 0; color: #00ff00; font-weight: bold; }
+        .item { padding: 5px; border-bottom: 1px solid #333; }
+        .highlight { color: yellow; font-weight: bold; font-size: 1.1em; }
     </style>
     <script type="importmap">
         {
@@ -25,8 +26,8 @@
 </head>
 <body>
     <div id="sidebar">
-        <h3>نتایج کالبدشکافی Robotx</h3>
-        <div id="results">در حال اسکن...</div>
+        <h3>نتایج اسکن Robotx.glb</h3>
+        <div id="output">در حال خواندن فایل...</div>
     </div>
 
     <script type="module">
@@ -36,62 +37,82 @@
 
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x444444);
-        const camera = new THREE.PerspectiveCamera(50, (window.innerWidth-350)/window.innerHeight, 0.1, 100);
-        camera.position.set(0, 1.5, 3);
+        const camera = new THREE.PerspectiveCamera(50, (window.innerWidth-400)/window.innerHeight, 0.1, 100);
+        camera.position.set(0, 1.5, 4);
         
         const renderer = new THREE.WebGLRenderer({antialias: true});
-        renderer.setSize(window.innerWidth - 350, window.innerHeight);
+        renderer.setSize(window.innerWidth - 400, window.innerHeight);
         document.body.appendChild(renderer.domElement);
         
         const controls = new OrbitControls(camera, renderer.domElement);
         scene.add(new THREE.AmbientLight(0xffffff, 2));
+        scene.add(new THREE.DirectionalLight(0xffffff, 2));
 
-        const resultBox = document.getElementById('results');
+        const out = document.getElementById('output');
         const loader = new GLTFLoader();
         
         loader.load('./Robotx.glb', function(gltf) {
             scene.add(gltf.scene);
             gltf.scene.position.y = -1;
-            resultBox.innerHTML = ""; 
+            
+            // نمایش اسکلت (اگر وجود داشته باشد)
+            const helper = new THREE.SkeletonHelper(gltf.scene);
+            scene.add(helper);
 
-            let foundSkin = false;
+            out.innerHTML = "";
+            let bonesFound = 0;
+            let headFoundName = "";
 
-            // گشتن دنبال SkinnedMesh (مشِ استخوان‌دار)
+            // --- جستجوی هوشمند ---
             gltf.scene.traverse((o) => {
-                if (o.isSkinnedMesh) {
-                    foundSkin = true;
-                    resultBox.innerHTML += `<div class="mesh">📦 MESH: ${o.name}</div>`;
+                
+                // 1. بررسی استخوان‌های معمولی
+                if (o.isBone) {
+                    bonesFound++;
+                    printBone(o.name);
+                    checkHead(o.name);
+                }
+
+                // 2. بررسی استخوان‌های مخفی (SkinnedMesh)
+                if (o.isSkinnedMesh && o.skeleton) {
+                    out.innerHTML += `<div class='item' style='color:cyan'>📦 مش پوسته‌دار پیدا شد: ${o.name}</div>`;
                     
-                    // حالا میریم سراغ استخوان‌های مخفی داخل اسکلت
-                    if (o.skeleton && o.skeleton.bones) {
-                        resultBox.innerHTML += `<div style="color:yellow; margin-bottom:5px">تعداد استخوان: ${o.skeleton.bones.length}</div>`;
-                        
-                        o.skeleton.bones.forEach(bone => {
-                            let boneName = bone.name;
-                            let style = "color: #888; margin-left: 15px;";
-                            
-                            // اگر اسمش شبیه سر بود
-                            if (boneName.toLowerCase().includes('head') || boneName.toLowerCase().includes('neck')) {
-                                style = "color: #00ffcc; font-weight:bold; margin-left: 15px;";
-                                boneName = `>>> ${boneName} <<<`;
-                            }
-                            
-                            resultBox.innerHTML += `<div style="${style}">🦴 ${boneName}</div>`;
-                        });
-                    } else {
-                        resultBox.innerHTML += `<div style="color:red">این مش اسکلت (Skeleton) ندارد!</div>`;
-                    }
-                    resultBox.innerHTML += "<hr>";
+                    o.skeleton.bones.forEach(b => {
+                        // چک کنیم تکراری چاپ نشه (چون traverse خودش میره سراغشون ولی محض اطمینان)
+                        // printBone(b.name + " (inside skin)"); 
+                    });
                 }
             });
 
-            if (!foundSkin) {
-                resultBox.innerHTML = "<h3 style='color:red'>هیچ مدل SkinnedMesh پیدا نشد!</h3><p>احتمالاً مدل به صورت Static Mesh اکسپورت شده.</p>";
+            if (bonesFound === 0) {
+                out.innerHTML += "<h2 style='color:red'>❌ هیچ استخوانی پیدا نشد!</h2><p>تنظیمات اکسپورت (Export Skins) هنوز مشکل دارد.</p>";
+            } else if (headFoundName) {
+                out.innerHTML = `<div class='success-box'>✅ هدف پیدا شد!<br>NAME: ${headFoundName}</div>` + out.innerHTML;
+            } else {
+                out.innerHTML = `<div class='success-box' style='color:orange'>⚠️ استخوان‌ها هستند ولی اسم Head پیدا نشد. لیست را چک کنید.</div>` + out.innerHTML;
             }
 
         }, undefined, function(e) {
-            resultBox.innerHTML = "خطا در لود فایل.";
+            out.innerHTML = "خطا در لود فایل. (نام فایل Robotx.glb است؟)";
         });
+
+        function printBone(name) {
+            let style = "color: #888;";
+            let prefix = "🦴 ";
+            
+            if (name.toLowerCase().includes('head') || name.toLowerCase().includes('neck')) {
+                style = "color: yellow; font-weight:bold;";
+                prefix = "🔥 ";
+            }
+            out.innerHTML += `<div class='item' style='${style}'>${prefix}${name}</div>`;
+        }
+
+        function checkHead(name) {
+            if (name.toLowerCase().includes('head') && !name.toLowerCase().includes('end')) {
+                // اسم را برای استفاده بعدی ذخیره میکنیم
+                // window.HEAD_NAME = name; 
+            }
+        }
 
         function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
         animate();
