@@ -2,7 +2,7 @@
 <html lang="fa">
 <head>
     <meta charset="UTF-8">
-    <title>مرحله ۱ – تست Skeleton</title>
+    <title>مرحله ۲ – چرخش سر</title>
     <style>
         body {
             margin: 0;
@@ -18,8 +18,6 @@
             color: #00ff00;
             padding: 15px;
             border: 1px solid #555;
-            max-height: 90vh;
-            overflow-y: auto;
             font-size: 13px;
         }
     </style>
@@ -45,12 +43,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x333333);
 
-const camera = new THREE.PerspectiveCamera(
-    50,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    100
-);
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.position.set(0, 1.5, 4);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -70,48 +63,56 @@ const debugDiv = document.getElementById('debug');
 // ---------- Loader ----------
 const loader = new GLTFLoader();
 
-loader.load(
-    './Robotx.glb',
-    (gltf) => {
+let headBone = null;
 
-        const model = gltf.scene;
-        scene.add(model);
-        model.position.y = -1;
+loader.load('./Robotx.glb', (gltf) => {
 
-        let skinnedMesh = null;
+    const model = gltf.scene;
+    scene.add(model);
+    model.position.y = -1;
 
-        // پیدا کردن SkinnedMesh
-        model.traverse((o) => {
-            if (o.isSkinnedMesh) {
-                skinnedMesh = o;
-                console.log("✅ SkinnedMesh پیدا شد:", o.name);
-            }
-        });
+    let skinnedMesh = null;
 
-        if (!skinnedMesh) {
-            debugDiv.innerHTML = "❌ هیچ SkinnedMesh ای پیدا نشد";
-            console.error("❌ SkinnedMesh پیدا نشد");
-            return;
+    model.traverse((o) => {
+        if (o.isSkinnedMesh) {
+            skinnedMesh = o;
         }
+    });
 
-        // نمایش لیست استخوان‌ها
-        debugDiv.innerHTML = "<b>🦴 Skeleton Bones:</b><br><br>";
-
-        skinnedMesh.skeleton.bones.forEach((bone, i) => {
-            debugDiv.innerHTML += `${i} : ${bone.name}<br>`;
-            console.log(i, bone.name);
-        });
-    },
-    undefined,
-    (err) => {
-        debugDiv.innerHTML = "❌ خطا در لود فایل";
-        console.error(err);
+    if (!skinnedMesh) {
+        debugDiv.innerHTML = "❌ SkinnedMesh پیدا نشد";
+        return;
     }
-);
 
-// ---------- رندر ----------
+    // گرفتن Bone سر
+    skinnedMesh.skeleton.bones.forEach(bone => {
+        if (bone.name === "mixamorigHead") {
+            headBone = bone;
+        }
+    });
+
+    if (headBone) {
+        debugDiv.innerHTML = "✅ mixamorigHead پیدا شد — در حال چرخش...";
+        console.log("Head bone:", headBone);
+    } else {
+        debugDiv.innerHTML = "❌ mixamorigHead پیدا نشد";
+    }
+
+}, undefined, (err) => {
+    console.error(err);
+});
+
+// ---------- انیمیشن ----------
+let t = 0;
+
 function animate() {
     requestAnimationFrame(animate);
+
+    if (headBone) {
+        t += 0.02;
+        headBone.rotation.y = Math.sin(t) * 0.6; // چپ و راست
+    }
+
     renderer.render(scene, camera);
 }
 animate();
