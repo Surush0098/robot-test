@@ -2,18 +2,15 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>تست نهایی استخوان‌ها</title>
+    <title>تست حرکت اجباری</title>
     <style>
-        body { margin: 0; background-color: #222; font-family: monospace; overflow: hidden; }
-        #sidebar {
-            position: absolute; top: 0; right: 0; width: 400px; height: 100vh;
-            background: #111; color: #ccc; overflow-y: auto; padding: 15px;
-            border-left: 3px solid #00ff00; font-size: 13px; z-index: 999;
+        body { margin: 0; background-color: #333; overflow: hidden; }
+        #status {
+            position: absolute; top: 10px; left: 10px;
+            background: rgba(0,0,0,0.8); color: lime; padding: 10px;
+            font-family: monospace; font-size: 14px; pointer-events: none;
+            max-height: 90vh; overflow-y: auto; width: 300px;
         }
-        h3 { color: white; border-bottom: 1px solid #00ff00; padding-bottom: 5px; margin-top: 0; }
-        .success-box { background: #003300; border: 1px solid #00ff00; padding: 10px; margin: 10px 0; color: #00ff00; font-weight: bold; }
-        .item { padding: 5px; border-bottom: 1px solid #333; }
-        .highlight { color: yellow; font-weight: bold; font-size: 1.1em; }
     </style>
     <script type="importmap">
         {
@@ -25,97 +22,110 @@
     </script>
 </head>
 <body>
-    <div id="sidebar">
-        <h3>نتایج اسکن Robotx.glb</h3>
-        <div id="output">در حال خواندن فایل...</div>
-    </div>
+    <div id="status">در حال لود...</div>
 
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+        // 1. صحنه
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x444444);
-        const camera = new THREE.PerspectiveCamera(50, (window.innerWidth-400)/window.innerHeight, 0.1, 100);
+        scene.background = new THREE.Color(0x222222);
+        
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 100);
         camera.position.set(0, 1.5, 4);
         
         const renderer = new THREE.WebGLRenderer({antialias: true});
-        renderer.setSize(window.innerWidth - 400, window.innerHeight);
+        renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
         
         const controls = new OrbitControls(camera, renderer.domElement);
-        scene.add(new THREE.AmbientLight(0xffffff, 2));
         scene.add(new THREE.DirectionalLight(0xffffff, 2));
+        scene.add(new THREE.AmbientLight(0xffffff, 1));
 
-        const out = document.getElementById('output');
+        const logDiv = document.getElementById('status');
+        function log(msg) { logDiv.innerHTML += msg + "<br>"; }
+
+        // لیست قطعاتی که قراره تکون بدیم
+        const movingParts = [];
+
+        // 2. لودر
         const loader = new GLTFLoader();
         
         loader.load('./Robotx.glb', function(gltf) {
-            scene.add(gltf.scene);
-            gltf.scene.position.y = -1;
-            
-            // نمایش اسکلت (اگر وجود داشته باشد)
-            const helper = new THREE.SkeletonHelper(gltf.scene);
-            scene.add(helper);
+            const model = gltf.scene;
+            scene.add(model);
+            model.position.y = -1;
 
-            out.innerHTML = "";
-            let bonesFound = 0;
-            let headFoundName = "";
+            log("--- شروع جستجو برای حرکت ---");
 
-            // --- جستجوی هوشمند ---
-            gltf.scene.traverse((o) => {
+            // گشتن توی کل اجزا (مهم نیست استخوان باشه یا نه)
+            model.traverse((o) => {
+                let name = o.name.toLowerCase();
                 
-                // 1. بررسی استخوان‌های معمولی
-                if (o.isBone) {
-                    bonesFound++;
-                    printBone(o.name);
-                    checkHead(o.name);
-                }
-
-                // 2. بررسی استخوان‌های مخفی (SkinnedMesh)
-                if (o.isSkinnedMesh && o.skeleton) {
-                    out.innerHTML += `<div class='item' style='color:cyan'>📦 مش پوسته‌دار پیدا شد: ${o.name}</div>`;
+                // لیست کلماتی که میخوایم تکون بخورن
+                // (سر، گردن، ستون فقرات، پاها)
+                if (name.includes('head') || 
+                    name.includes('neck') || 
+                    name.includes('spine') || 
+                    name.includes('leg') ||
+                    name.includes('arm')) {
                     
-                    o.skeleton.bones.forEach(b => {
-                        // چک کنیم تکراری چاپ نشه (چون traverse خودش میره سراغشون ولی محض اطمینان)
-                        // printBone(b.name + " (inside skin)"); 
-                    });
+                    // فیلتر کردن چیزهای الکی (مثل نوک انگشت یا اندکتورها)
+                    if (!name.includes('end') && !name.includes('nub')) {
+                        movingParts.push(o);
+                        log(`✅ متصل شد: <span style="color:yellow">${o.name}</span>`);
+                    }
                 }
             });
 
-            if (bonesFound === 0) {
-                out.innerHTML += "<h2 style='color:red'>❌ هیچ استخوانی پیدا نشد!</h2><p>تنظیمات اکسپورت (Export Skins) هنوز مشکل دارد.</p>";
-            } else if (headFoundName) {
-                out.innerHTML = `<div class='success-box'>✅ هدف پیدا شد!<br>NAME: ${headFoundName}</div>` + out.innerHTML;
+            if (movingParts.length === 0) {
+                log("<span style='color:red'>هیچ قطعه‌ای با این نام‌ها پیدا نشد!</span>");
             } else {
-                out.innerHTML = `<div class='success-box' style='color:orange'>⚠️ استخوان‌ها هستند ولی اسم Head پیدا نشد. لیست را چک کنید.</div>` + out.innerHTML;
+                log(`<br>تعداد ${movingParts.length} قطعه پیدا شد و داره تکون میخوره!`);
             }
 
         }, undefined, function(e) {
-            out.innerHTML = "خطا در لود فایل. (نام فایل Robotx.glb است؟)";
+            log("خطا در لود فایل.");
         });
 
-        function printBone(name) {
-            let style = "color: #888;";
-            let prefix = "🦴 ";
+        // 3. انیمیشن اتوماتیک
+        function animate() {
+            requestAnimationFrame(animate);
             
-            if (name.toLowerCase().includes('head') || name.toLowerCase().includes('neck')) {
-                style = "color: yellow; font-weight:bold;";
-                prefix = "🔥 ";
-            }
-            out.innerHTML += `<div class='item' style='${style}'>${prefix}${name}</div>`;
+            const time = Date.now() * 0.002; // سرعت زمان
+
+            // چرخاندن تمام قطعات پیدا شده
+            movingParts.forEach(part => {
+                // یک حرکت سینوسی (رفت و برگشت)
+                // هر قطعه رو توی محورهای مختلف کمی تکون میدیم
+                
+                if (part.name.toLowerCase().includes('head')) {
+                    part.rotation.y = Math.sin(time) * 0.5; // سر: چپ و راست
+                } 
+                else if (part.name.toLowerCase().includes('neck')) {
+                    part.rotation.x = Math.sin(time) * 0.3; // گردن: بالا پایین
+                }
+                else if (part.name.toLowerCase().includes('spine')) {
+                    part.rotation.z = Math.sin(time) * 0.1; // کمر: کمی کج شدن
+                }
+                else {
+                    // دست و پا و بقیه چیزها
+                    part.rotation.z = Math.sin(time) * 0.2;
+                }
+            });
+
+            renderer.render(scene, camera);
         }
 
-        function checkHead(name) {
-            if (name.toLowerCase().includes('head') && !name.toLowerCase().includes('end')) {
-                // اسم را برای استفاده بعدی ذخیره میکنیم
-                // window.HEAD_NAME = name; 
-            }
-        }
-
-        function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
         animate();
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
     </script>
 </body>
 </html>
