@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Babylon.js – Head LookAt</title>
+<title>Babylon.js – Fixed Camera Head Follow</title>
 
 <style>
 html, body {
@@ -20,7 +20,6 @@ html, body {
 
 <script src="https://cdn.babylonjs.com/babylon.js"></script>
 <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
-<script src="https://cdn.babylonjs.com/inspector/babylon.inspector.bundle.js"></script>
 </head>
 
 <body>
@@ -30,49 +29,47 @@ html, body {
 const canvas = document.getElementById("renderCanvas");
 const engine = new BABYLON.Engine(canvas, true);
 
-let headBone = null;
-let neckBone = null;
+let headBone, neckBone;
 let mouseX = 0;
 let mouseY = 0;
 
 const createScene = async () => {
 
     const scene = new BABYLON.Scene(engine);
-    scene.clearColor = new BABYLON.Color4(0.15, 0.15, 0.15, 1);
+    scene.clearColor = new BABYLON.Color4(0.12, 0.12, 0.12, 1);
 
-    // ---------- Camera ----------
-    const camera = new BABYLON.ArcRotateCamera(
-        "cam",
-        Math.PI / 2,
-        Math.PI / 2.3,
-        4,
+    // ---------- FIXED CAMERA (NO CONTROL) ----------
+    const camera = new BABYLON.FreeCamera(
+        "camera",
+        new BABYLON.Vector3(0, 1.6, -4),
+        scene
+    );
+    camera.setTarget(new BABYLON.Vector3(0, 1.4, 0));
+    camera.detachControl(canvas); // ⛔ هیچ کنترلی با موس
+
+    // ---------- LIGHT ----------
+    new BABYLON.HemisphericLight(
+        "hemi",
         new BABYLON.Vector3(0, 1, 0),
         scene
     );
-    camera.attachControl(canvas, true);
-
-    // ---------- Light ----------
-    new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0, 1, 0), scene);
 
     const dir = new BABYLON.DirectionalLight(
         "dir",
-        new BABYLON.Vector3(-0.5, -1, -0.5),
+        new BABYLON.Vector3(-0.3, -1, -0.2),
         scene
     );
-    dir.position = new BABYLON.Vector3(3, 6, 3);
+    dir.position = new BABYLON.Vector3(2, 5, -2);
 
-    // ---------- Ground ----------
+    // ---------- GROUND ----------
     const ground = BABYLON.MeshBuilder.CreateGround(
         "ground",
         { width: 10, height: 10 },
         scene
     );
+    ground.position.y = 0;
 
-    const gMat = new BABYLON.StandardMaterial("gmat", scene);
-    gMat.diffuseColor = new BABYLON.Color3(0.25, 0.25, 0.25);
-    ground.material = gMat;
-
-    // ---------- Load Model ----------
+    // ---------- LOAD MODEL ----------
     const result = await BABYLON.SceneLoader.ImportMeshAsync(
         "",
         "./",
@@ -83,62 +80,56 @@ const createScene = async () => {
     const root = result.meshes[0];
     const skeleton = result.skeletons[0];
 
-    // ---------- Center on feet ----------
+    // ---------- PUT FEET ON GROUND ----------
     const foot = skeleton.bones.find(b => b.name === "mixamorigLeftFoot");
     if (foot) {
-        const pos = foot.getAbsolutePosition();
-        root.position.y -= pos.y;
+        const footPos = foot.getAbsolutePosition();
+        root.position.y -= footPos.y;
     }
 
-    // ---------- Get Bones ----------
+    // ---------- GET BONES ----------
     headBone = skeleton.bones.find(b => b.name === "mixamorigHead");
     neckBone = skeleton.bones.find(b => b.name === "mixamorigNeck");
 
-    console.log("Head:", headBone);
-    console.log("Neck:", neckBone);
+    console.log("Head:", headBone?.name);
+    console.log("Neck:", neckBone?.name);
 
-    // ---------- Mouse ----------
+    // ---------- MOUSE POSITION ----------
     scene.onPointerObservable.add((pi) => {
         if (pi.type === BABYLON.PointerEventTypes.POINTERMOVE) {
-            mouseX = (pi.event.clientX / engine.getRenderWidth()) * 2 - 1;
-            mouseY = -(pi.event.clientY / engine.getRenderHeight()) * 2 + 1;
+            mouseX = (pi.event.clientX / engine.getRenderWidth()  - 0.5) * 2;
+            mouseY = (pi.event.clientY / engine.getRenderHeight() - 0.5) * -2;
         }
     });
 
-    // ---------- Head LookAt ----------
+    // ---------- HEAD FOLLOW ----------
     scene.onBeforeRenderObservable.add(() => {
 
         if (!headBone || !neckBone) return;
 
-        const ray = scene.createPickingRay(
-            engine.getRenderWidth() * (mouseX + 1) / 2,
-            engine.getRenderHeight() * (1 - mouseY) / 2,
-            BABYLON.Matrix.Identity(),
-            camera
+        // نقطه هدف جلوی کاراکتر
+        const target = new BABYLON.Vector3(
+            mouseX * 0.6,
+            1.5 + mouseY * 0.6,
+            1
         );
 
-        const target = ray.origin.add(ray.direction.scale(3));
+        // گردن (نرم‌تر)
+        neckBone.lookAt(
+            target,
+            0,
+            Math.PI,
+            Math.PI / 4
+        );
 
-        // Head (اصلی)
+        // سر (قوی‌تر)
         headBone.lookAt(
             target,
             0,
             Math.PI,
             Math.PI / 2
         );
-
-        // Neck (نرم‌تر)
-        neckBone.lookAt(
-            target,
-            0,
-            Math.PI,
-            Math.PI / 3
-        );
     });
-
-    // ---------- Debug ----------
-    window.scene = scene;
-    window.skeleton = skeleton;
 
     return scene;
 };
