@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Babylon.js – Mouse Driven Head</title>
+<title>Babylon – Mixamo Head Follow (FIXED)</title>
 
 <style>
 html, body {
@@ -29,31 +29,34 @@ const canvas = document.getElementById("renderCanvas");
 const engine = new BABYLON.Engine(canvas, true);
 
 let headBone, neckBone;
-let mouseX = 0;
-let mouseY = 0;
 
 const createScene = async () => {
 
     const scene = new BABYLON.Scene(engine);
-    scene.clearColor = new BABYLON.Color4(0.1, 0.1, 0.1, 1);
 
-    // ---------- FIXED CAMERA ----------
+    // ✅ Mixamo compatibility
+    scene.useRightHandedSystem = true;
+
+    scene.clearColor = new BABYLON.Color4(0.12, 0.12, 0.12, 1);
+
+    // ---------- CAMERA (FIXED FRONT) ----------
     const camera = new BABYLON.FreeCamera(
         "camera",
-        new BABYLON.Vector3(0, 1.6, -4),
+        new BABYLON.Vector3(0, 1.6, 4),
         scene
     );
     camera.setTarget(new BABYLON.Vector3(0, 1.5, 0));
+    camera.detachControl(canvas);
 
     // ---------- LIGHT ----------
     new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0, 1, 0), scene);
 
     const dir = new BABYLON.DirectionalLight(
         "dir",
-        new BABYLON.Vector3(-0.4, -1, -0.2),
+        new BABYLON.Vector3(0, -1, -1),
         scene
     );
-    dir.position = new BABYLON.Vector3(3, 6, -3);
+    dir.position = new BABYLON.Vector3(0, 5, 5);
 
     // ---------- LOAD MODEL ----------
     const result = await BABYLON.SceneLoader.ImportMeshAsync(
@@ -63,51 +66,36 @@ const createScene = async () => {
         scene
     );
 
-    const root = result.meshes[0];
     const skeleton = result.skeletons[0];
 
-    // ✅ FIX FACING DIRECTION
-    root.rotation.y = Math.PI;
-
-    // ---------- PUT FEET ON GROUND ----------
-    const foot = skeleton.bones.find(b => b.name === "mixamorigLeftFoot");
-    if (foot) {
-        const footPos = foot.getAbsolutePosition();
-        root.position.y -= footPos.y;
-    }
+    // 🔍 DEBUG: لیست استخوان‌ها
+    skeleton.bones.forEach(b => console.log(b.name));
 
     // ---------- GET BONES ----------
     headBone = skeleton.bones.find(b => b.name === "mixamorigHead");
     neckBone = skeleton.bones.find(b => b.name === "mixamorigNeck");
 
-    // ---------- MOUSE ----------
-    scene.onPointerObservable.add((pi) => {
-        if (pi.type === BABYLON.PointerEventTypes.POINTERMOVE) {
-            mouseX = (pi.event.clientX / engine.getRenderWidth() - 0.5) * 2;
-            mouseY = (pi.event.clientY / engine.getRenderHeight() - 0.5) * -2;
-        }
-    });
+    console.log("HEAD:", headBone);
+    console.log("NECK:", neckBone);
 
-    // ---------- APPLY ROTATION ----------
+    // ---------- INITIAL ROTATION RESET ----------
+    headBone.setRotationQuaternion(BABYLON.Quaternion.Identity());
+    neckBone.setRotationQuaternion(BABYLON.Quaternion.Identity());
+
+    // ---------- TEST ROTATION (AUTOMATIC) ----------
+    let t = 0;
+
     scene.onBeforeRenderObservable.add(() => {
+        t += 0.02;
 
-        if (!headBone || !neckBone) return;
+        // چرخش آزمایشی (اگر این دیده نشه، یعنی اسکلت اصلاً وصل نیست)
+        const yaw = Math.sin(t) * 0.5;
 
-        // محدودیت انسانی
-        const yaw   = BABYLON.Scalar.Clamp(mouseX, -1, 1) * 0.6;
-        const pitch = BABYLON.Scalar.Clamp(mouseY, -1, 1) * 0.4;
+        const qHead = BABYLON.Quaternion.FromEulerAngles(0, yaw, 0);
+        const qNeck = BABYLON.Quaternion.FromEulerAngles(0, yaw * 0.5, 0);
 
-        // گردن (کمتر)
-        neckBone.setRotation(
-            new BABYLON.Vector3(pitch * 0.4, yaw * 0.4, 0),
-            BABYLON.Space.LOCAL
-        );
-
-        // سر (بیشتر)
-        headBone.setRotation(
-            new BABYLON.Vector3(pitch, yaw, 0),
-            BABYLON.Space.LOCAL
-        );
+        headBone.setRotationQuaternion(qHead, BABYLON.Space.LOCAL);
+        neckBone.setRotationQuaternion(qNeck, BABYLON.Space.LOCAL);
     });
 
     return scene;
