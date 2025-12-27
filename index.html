@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>Babylon – Mixamo Head Follow (FIXED)</title>
+<meta charset="utf-8">
+<title>Babylon – Bone TEST</title>
 
 <style>
 html, body {
@@ -28,83 +28,58 @@ html, body {
 const canvas = document.getElementById("renderCanvas");
 const engine = new BABYLON.Engine(canvas, true);
 
-let headBone, neckBone;
+let headBone;
 
-const createScene = async () => {
+const scene = new BABYLON.Scene(engine);
+scene.clearColor = new BABYLON.Color4(0.15,0.15,0.15,1);
 
-    const scene = new BABYLON.Scene(engine);
+// 📷 دوربین خیلی ساده
+const camera = new BABYLON.ArcRotateCamera(
+    "cam",
+    Math.PI,
+    Math.PI / 2.2,
+    4,
+    new BABYLON.Vector3(0,1.4,0),
+    scene
+);
+camera.attachControl(canvas, true);
 
-    // ✅ Mixamo compatibility
-    scene.useRightHandedSystem = true;
+// 💡 نور
+new BABYLON.HemisphericLight("h", new BABYLON.Vector3(0,1,0), scene);
 
-    scene.clearColor = new BABYLON.Color4(0.12, 0.12, 0.12, 1);
+// ⬇️ لود مدل
+BABYLON.SceneLoader.ImportMeshAsync(
+    "",
+    "./",
+    "Robotx.glb",
+    scene
+).then((res) => {
 
-    // ---------- CAMERA (FIXED FRONT) ----------
-    const camera = new BABYLON.FreeCamera(
-        "camera",
-        new BABYLON.Vector3(0, 1.6, 4),
-        scene
-    );
-    camera.setTarget(new BABYLON.Vector3(0, 1.5, 0));
-    camera.detachControl(canvas);
+    const skeleton = res.skeletons[0];
+    console.log("Skeleton:", skeleton);
 
-    // ---------- LIGHT ----------
-    new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0, 1, 0), scene);
-
-    const dir = new BABYLON.DirectionalLight(
-        "dir",
-        new BABYLON.Vector3(0, -1, -1),
-        scene
-    );
-    dir.position = new BABYLON.Vector3(0, 5, 5);
-
-    // ---------- LOAD MODEL ----------
-    const result = await BABYLON.SceneLoader.ImportMeshAsync(
-        "",
-        "./",
-        "Robotx.glb",
-        scene
-    );
-
-    const skeleton = result.skeletons[0];
-
-    // 🔍 DEBUG: لیست استخوان‌ها
     skeleton.bones.forEach(b => console.log(b.name));
 
-    // ---------- GET BONES ----------
     headBone = skeleton.bones.find(b => b.name === "mixamorigHead");
-    neckBone = skeleton.bones.find(b => b.name === "mixamorigNeck");
 
-    console.log("HEAD:", headBone);
-    console.log("NECK:", neckBone);
+    console.log("HEAD BONE:", headBone);
 
-    // ---------- INITIAL ROTATION RESET ----------
-    headBone.setRotationQuaternion(BABYLON.Quaternion.Identity());
-    neckBone.setRotationQuaternion(BABYLON.Quaternion.Identity());
+    if (!headBone) {
+        alert("Head bone پیدا نشد");
+        return;
+    }
 
-    // ---------- TEST ROTATION (AUTOMATIC) ----------
     let t = 0;
 
     scene.onBeforeRenderObservable.add(() => {
         t += 0.02;
 
-        // چرخش آزمایشی (اگر این دیده نشه، یعنی اسکلت اصلاً وصل نیست)
-        const yaw = Math.sin(t) * 0.5;
-
-        const qHead = BABYLON.Quaternion.FromEulerAngles(0, yaw, 0);
-        const qNeck = BABYLON.Quaternion.FromEulerAngles(0, yaw * 0.5, 0);
-
-        headBone.setRotationQuaternion(qHead, BABYLON.Space.LOCAL);
-        neckBone.setRotationQuaternion(qNeck, BABYLON.Space.LOCAL);
+        // 🔥 تست واضح: سر باید چپ راست تاب بخوره
+        headBone.rotation.y = Math.sin(t) * 0.6;
     });
-
-    return scene;
-};
-
-createScene().then(scene => {
-    engine.runRenderLoop(() => scene.render());
 });
 
+engine.runRenderLoop(() => scene.render());
 window.addEventListener("resize", () => engine.resize());
 </script>
 </body>
